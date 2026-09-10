@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DocumentItem, BreadcrumbItem } from '../types/document';
+import { DocumentItem, BreadcrumbItem, BlockNode } from '../types/document';
 import { WorkspaceMeta } from '../types/workspace';
 
 interface WorkspaceState {
@@ -15,6 +15,7 @@ interface WorkspaceState {
   // 页面 CRUD
   createPage: (parentId?: string | null, title?: string, icon?: string) => string;
   updatePage: (id: string, updates: Partial<DocumentItem>) => void;
+  updateDocumentBlocks: (id: string, blocks: BlockNode[]) => void;
   deletePage: (id: string) => void;
   toggleFavorite: (id: string) => void;
   getBreadcrumbs: (id: string) => BreadcrumbItem[];
@@ -209,6 +210,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             [id]: {
               ...existing,
               ...updates,
+              updatedAt: Date.now(),
+            }
+          }
+        };
+      });
+    },
+
+    updateDocumentBlocks: (id: string, blocks: BlockNode[]) => {
+      set((state) => {
+        const existing = state.documents[id];
+        if (!existing) return state;
+        return {
+          documents: {
+            ...state.documents,
+            [id]: {
+              ...existing,
+              blocks,
               updatedAt: Date.now(),
             }
           }

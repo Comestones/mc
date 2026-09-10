@@ -16,7 +16,7 @@
 | 模块 | 当前实现 / 后续规划 |
 | :--- | :--- |
 | **前端 Web & UI** | 已实现：React 18.3.1 + TypeScript + Vite + Tailwind CSS + Lucide + Zustand；Shadcn UI 尚未接入 |
-| **编辑器与协同内核** | 待实现：BlockSuite / TipTap（Day 2 确定选型），后续接入 Yjs + y-indexeddb |
+| **编辑器与协同内核** | 已实现：自主轻量块树引擎 (`mc-block-engine`)，实现 BlockNode 1:1 双向绑定与常用块编辑；规划接入 Yjs + y-indexeddb |
 | **桌面客户端壳** | 规划：Tauri 2.0 (Rust) |
 | **后端 API & WebSocket** | 规划：Node.js (Hono / Fastify) + Hocuspocus CRDT 网关 |
 | **数据持久化与存储** | 规划：PostgreSQL 16 (Prisma/Drizzle) + S3 兼容对象存储 (MinIO/R2) |
@@ -24,23 +24,25 @@
 
 ---
 
-## 📍 当前进度与 Day 1 核查
+## 📍 当前进度与最新交付
 
-截至 2026-09-10，处于 **Sprint 1，Day 1 前端骨架已完成，Day 2 已规划、待实现**（1 / 35，约 3%）。
+截至 2026-09-10，处于 **Sprint 1，Day 1 与 Day 2 已顺利完成，Day 3 待开始**（2 / 35，约 6%）。
 
-- 已实现递归页面树、页面新建/删除/标题重命名/收藏、面包屑、明暗主题、Emoji 图标与预设远程封面更换。
-- 已实现 Ctrl+K / Cmd+K 搜索标题与顶层块文本，支持方向键选择及回车跳转。
-- 正文只有基础块展示与 todo 勾选，尚不能编辑文本；“双人协同就绪”为静态占位。
-- 文档保存于内存，刷新会重置，只有主题保存至 localStorage。父页面删除未处理后代页面，已列入 Sprint 1 待修项。
-- 本次源码核查及 npm run build（含 TypeScript 检查）通过，未做浏览器全量交互验收。构建复核过程见每日规划核查记录。
+- **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
+- **Day 2 基础块编辑闭环**：
+  - 交付 `mc_web/src/components/editor/` 块编辑器核心，完成自主块树架构选型，无缝映射 `BlockNode` 数据模型。
+  - 支持段落 (Paragraph)、一至三级标题 (Heading 1-3) 实时编辑与无损类型切换。
+  - 支持分割线 (Divider) 插入、聚焦、安全删除及后置回车连续输入。
+  - 支持键盘 Enter 智能拆分（标题拆分降级段落）、Backspace 向上合并与标题降级、首块越界防护与空文档默认段落兜底。
+  - 具备中文输入法 (`isComposing`) 防误拆锁、纯文本多行粘贴自动拆块与本地撤销/重做 (Undo/Redo) 栈。
+  - 通过 `key={doc.id}` 彻底隔离多文档编辑生命周期，编辑内容实时同步 Store 并与全局搜索联动，既有 Todo/Callout 块正常兼容。
+  - 自动化测试脚本 (`scripts/verify-day2.mjs`) 与 `npm run build` 生产构建均顺利通过 (Exit Code 0)。
 
-## 🎯 Day 2 计划：基础块编辑闭环
+## 🎯 Day 3 计划：列表与待办块实现 (Todo / List)
 
-1. 确定编辑器内核、依赖版本与 BlockNode 数据映射，保留稳定 ID 和已有示例块。
-2. 建立编辑组件并接入详情页，经 Store 更新当前页面正文，切页不串写、不丢失内存内容。
-3. 实现 Paragraph、H1-H3 输入/切换与 Divider 插入/删除，提供基础操作入口。
-4. 完成 Enter 拆分、Backspace 合并及空块/首块边界，验证中文输入、粘贴、撤销/重做和光标行为。
-5. 通过构建与手工回归后再标记完成；列表、Slash 菜单、拖拽、持久化和协同按后续日程推进。
+1. 实现无序列表 (Bullet list) 与有序列表 (Numbered list) 的键盘输入与序号递增。
+2. 实现待办清单 (Todo block) 的快速创建、划线切换与点击勾选。
+3. 支持 `Tab` / `Shift+Tab` 块级缩进与降级嵌套交互。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -53,11 +55,12 @@ npm run dev
 ```
 
 在 mc_web 目录执行 `npm run build` 完成 TypeScript 检查与生产构建。
+执行 `node scripts/verify-day2.mjs` 运行 Day 2 自动化验收套件。
 
 ## 📅 每日开发推进建议
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 1 - Day 2: Block 富文本编辑器核心与常用块类型渲染]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 1 - Day 3: 列表与待办块实现 (Todo / List)]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

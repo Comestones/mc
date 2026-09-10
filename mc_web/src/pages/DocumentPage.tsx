@@ -2,14 +2,12 @@ import React from 'react';
 import {
   Image as ImageIcon,
   Smile,
-  CheckSquare,
-  Square,
-  Sparkles,
   Calendar,
   Clock,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { IconPicker } from '../components/common/IconPicker';
+import { BlockEditor } from '../components/editor/BlockEditor';
 import { cn } from '../utils/cn';
 
 const RANDOM_COVERS = [
@@ -50,19 +48,6 @@ export const DocumentPage: React.FC = () => {
 
   const handleRemoveCover = () => {
     updatePage(doc.id, { coverImage: undefined });
-  };
-
-  const handleToggleTodo = (blockIndex: number) => {
-    if (!doc.blocks) return;
-    const newBlocks = [...doc.blocks];
-    const target = newBlocks[blockIndex];
-    if (target && target.type === 'todo') {
-      target.properties = {
-        ...target.properties,
-        checked: !target.properties?.checked,
-      };
-      updatePage(doc.id, { blocks: newBlocks });
-    }
   };
 
   return (
@@ -148,118 +133,12 @@ export const DocumentPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. Block 块级内容渲染区 */}
-        <div className="space-y-3 mt-6 text-sm text-text-primary-light dark:text-text-primary-dark leading-relaxed">
-          {doc.blocks && doc.blocks.length > 0 ? (
-            doc.blocks.map((block, idx) => {
-              switch (block.type) {
-                case 'heading1':
-                  return (
-                    <h1
-                      key={block.id}
-                      className="text-2xl font-bold text-text-primary-light dark:text-text-primary-dark mt-6 mb-2 tracking-tight"
-                    >
-                      {block.content}
-                    </h1>
-                  );
-                case 'heading2':
-                  return (
-                    <h2
-                      key={block.id}
-                      className="text-xl font-semibold text-text-primary-light dark:text-text-primary-dark mt-4 mb-1.5 tracking-tight"
-                    >
-                      {block.content}
-                    </h2>
-                  );
-                case 'heading3':
-                  return (
-                    <h3
-                      key={block.id}
-                      className="text-base font-semibold text-text-primary-light dark:text-text-primary-dark mt-3 mb-1"
-                    >
-                      {block.content}
-                    </h3>
-                  );
-                case 'callout':
-                  return (
-                    <div
-                      key={block.id}
-                      className="p-3.5 rounded-xl bg-sidebar-light dark:bg-sidebar-dark border border-border-light dark:border-border-dark flex items-start gap-3 my-2"
-                    >
-                      <span className="text-lg select-none">
-                        {block.properties?.icon || '💡'}
-                      </span>
-                      <div className="flex-1 text-xs text-text-primary-light dark:text-text-primary-dark leading-normal">
-                        {block.content}
-                      </div>
-                    </div>
-                  );
-                case 'todo':
-                  const isChecked = block.properties?.checked;
-                  return (
-                    <div
-                      key={block.id}
-                      onClick={() => handleToggleTodo(idx)}
-                      className="flex items-center gap-2.5 cursor-pointer py-0.5 group"
-                    >
-                      <button className="text-text-muted-light dark:text-text-muted-dark group-hover:text-blue-500 transition-colors">
-                        {isChecked ? (
-                          <CheckSquare className="w-4 h-4 text-blue-500 fill-blue-500/20" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </button>
-                      <span
-                        className={cn(
-                          'text-xs transition-all',
-                          isChecked &&
-                            'line-through text-text-muted-light dark:text-text-muted-dark opacity-60'
-                        )}
-                      >
-                        {block.content}
-                      </span>
-                    </div>
-                  );
-                case 'bulletList':
-                  return (
-                    <div key={block.id} className="flex items-start gap-2 text-xs pl-2">
-                      <span className="text-text-muted-light dark:text-text-muted-dark select-none">•</span>
-                      <span>{block.content}</span>
-                    </div>
-                  );
-                case 'paragraph':
-                default:
-                  return (
-                    <p
-                      key={block.id}
-                      className="text-xs text-text-primary-light dark:text-text-primary-dark min-h-[1.5rem]"
-                    >
-                      {block.content || (
-                        <span className="text-text-muted-light/40 dark:text-text-muted-dark/40 select-none">
-                          键入 '/' 呼出快捷命令，或直接开始写作...
-                        </span>
-                      )}
-                    </p>
-                  );
-              }
-            })
-          ) : (
-            <p className="text-xs text-text-muted-light/40 dark:text-text-muted-dark/40">
-              键入 '/' 呼出快捷命令，或直接开始写作...
-            </p>
-          )}
-
-          {/* 下一步提示框 */}
-          <div className="mt-12 p-4 rounded-xl border border-dashed border-border-light dark:border-border-dark bg-sidebar-light/30 dark:bg-sidebar-dark/30 text-xs text-text-muted-light dark:text-text-muted-dark">
-            <div className="font-semibold text-text-primary-light dark:text-text-primary-dark mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              <span>BlockSuite / TipTap 富文本编辑内核插槽已预留</span>
-            </div>
-            <p className="leading-relaxed text-[11px]">
-              当前工作区布局、无限层级页面树、快捷搜索已完全打通。下一阶段将直接在此插槽接入支持 Slash 指令、块级拖拽与 Yjs 协同的富文本核心。
-            </p>
-          </div>
-        </div>
+        {/* 3. Block 块级内容编辑区 */}
+        <BlockEditor
+          key={doc.id}
+          documentId={doc.id}
+          initialBlocks={doc.blocks}
+        />
       </div>
     </div>
   );

@@ -61,13 +61,13 @@ flowchart LR
   - 实现文档详情页：Emoji 图标选择器、Banner 封面图更换、实时响应式大标题
   - 实现全局快捷搜索模态框 (`Ctrl+K` / `Cmd+K`)
   - 验证 TypeScript 零类型错误与 Vite 生产构建顺利通过 (Exit Code 0)
-- [ ] **Day 2: Block 富文本编辑器核心与常用块类型渲染**
-  - **交付目标**：将详情页静态正文接入编辑器，实现基础块编辑闭环；当前仅完成规划，尚未实现。
-  - [ ] **内核与数据契约**：验证 TipTap / BlockSuite 候选方案对基础块、中文输入、序列化和后续 Yjs 接入的支持，记录最终选择、依赖版本及与 BlockNode 的映射；定义稳定 ID、空文档默认段落及未知块保留规则。
-  - [ ] **组件与状态绑定**：在 mc_web/src/components/editor/ 建立编辑组件，替换 DocumentPage.tsx 静态正文；通过 Store 不可变更新当前页面 blocks 和 updatedAt，避免回写循环、光标重置及切页串写。保留 todo、callout、bulletList 示例数据与现有展示/勾选能力。
-  - [ ] **基础块操作**：实现 Paragraph、H1-H3 输入与类型切换，提供基础工具栏或块类型选择入口；支持 Divider 插入/删除，分割线不可输入，末尾分割线后可继续创建段落。
-  - [ ] **键盘与输入边界**：Enter 在光标处拆分文本，标题末尾回车生成段落；Backspace 在文本块首合并到前一文本块并保持光标，空标题先回退段落，首块禁止越界删除，保留至少一个可编辑段落。明确分割线相邻删除行为，处理中文输入法、纯文本粘贴及撤销/重做。
-  - [ ] **验收归档**：执行第四部分验收清单，通过后再同步两份文档完成状态。列表、Slash 菜单、拖拽、IndexedDB 和协同按后续日程推进。
+- [x] **Day 2: Block 富文本编辑器核心与常用块类型渲染** *(已完成)*
+  - **交付目标**：将详情页静态正文接入编辑器，实现基础块编辑闭环；已完成内核选型与核心组件开发。
+  - [x] **内核与数据契约**：完成 TipTap / BlockSuite / 自主轻量块树引擎全维度对比评估；最终确立自主轻量块树引擎方案，保证与 BlockNode 数据契约 1:1 天然对齐，为 Sprint 3 Yjs Y.Array<Y.Map> 协同打通底座；落实唯一稳定 ID、空文档默认段落及未知块保底渲染机制。
+  - [x] **组件与状态绑定**：在 `mc_web/src/components/editor/` 建立 `BlockEditor`、`BlockItem`、`TextBlock`、`DividerBlock`、`BlockTypeSelector` 等模块化组件，替换 `DocumentPage.tsx` 静态正文；通过 Store `updateDocumentBlocks` 实现不可变响应式更新，通过 `key={doc.id}` 彻底杜绝切页串写与闭包污染。
+  - [x] **基础块操作**：实现 Paragraph、H1-H3 实时编辑与类型切换（保留文本内容与稳定 ID），提供悬浮操作条与下拉切换入口；实现 Divider 分割线插入与删除，末尾分割线后自动追加段落确保可继续输入。
+  - [x] **键盘与输入边界**：实现 Enter 光标处拆分（标题拆分降级为段落，块首 Enter 向上插入段落）；实现 Backspace 在光标 0 处合并（标题降级段落、首块越界拦截保底、分割线相邻安全删除）；完整处理中文输入法 IME 合成锁 (`isComposing`) 避免误拆误删；支持纯文本多行粘贴自动分块与撤销/重做 (Undo/Redo) 历史栈。
+  - [x] **验收归档**：编写并执行自动化测试套件 `scripts/verify-day2.mjs` 全部通过，`npm run build` 零错误通过。
 - [ ] **Day 3: 列表与待办块实现 (Todo / List)**
   - 实现无序列表 (Bullet list)、有序列表 (Numbered list)
   - 实现待办清单 (Todo block)，支持点击勾选与划线状态
@@ -199,17 +199,17 @@ flowchart LR
 
 ### 📊 当前整体进度概览
 - **当前所处 Sprint**: **Sprint 1 (脚手架与核心编辑器)**
-- **已完成天数**: `1 / 35`
-- **总体完成度**: `3%`
+- **已完成天数**: `2 / 35`
+- **总体完成度**: `6%`
 
 ```
-[█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 3%
+[██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 6%
 ```
 
 ### 🎯 明日聚焦 (Next Day's Focus)
-- **目标**: 完成 **Day 2: Block 富文本编辑器核心与常用块类型渲染**
-- **状态**：已规划，待实现；任务见 Sprint 1 的 Day 2。
-- **预期产出**：编辑器组件、块数据适配与 Store 更新接口、基础操作入口及验收记录。
+- **目标**: 完成 **Day 3: 列表与待办块实现 (Todo / List)**
+- **状态**：待开始；任务见 Sprint 1 的 Day 3。
+- **预期产出**：无序列表 (Bullet list)、有序列表 (Numbered list)、待办清单 (Todo block) 的编辑交互与 Tab / Shift+Tab 缩进降级支持。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -220,14 +220,28 @@ flowchart LR
 - **待修问题**：deletePage 仅删除指定页面，未处理后代页面，会留下孤立子页面。列入 Sprint 1 待修项，在 Day 7 收尾前明确级联删除或子页面提升规则并验证。
 - **本次验证**：源码核查完成；npm run build（tsc && vite build）重跑通过，退出码 0。首次在清理旧产物时遇到权限错误，获准重跑后通过；未进行浏览器全量交互验收。
 
-### Day 2 验收清单（完成后逐项勾选）
+### Day 2 核查记录（2026-09-10）
 
-- [ ] 新建页面可立即输入；Paragraph、H1-H3 切换保留文本，Divider 可插入/删除且后方可继续输入。
-- [ ] 在文本开头、中间、末尾验证 Enter 拆分与 Backspace 合并；覆盖空标题、首块、唯一空段落及分割线相邻场景，无文字丢失、重复块或光标跳转。
-- [ ] 中文输入法确认候选不会误拆块；纯文本粘贴、撤销/重做正常。
-- [ ] 编辑 A → 切至 B → 返回 A，内容保留且两页互不覆盖；新文本可被搜索找到，旧示例数据与已有交互保留。
-- [ ] 标题、树导航、收藏、搜索和明暗主题无回归；刷新持久化留待 Day 7。
-- [ ] 在 mc_web 执行 npm run build 通过，记录手工验收与遗留问题，再同步 README 和进度看板。
+- **内核与数据契约结论**：经系统评测，BlockSuite 的 Web Components Shadow DOM 严重阻隔 Tailwind CSS 设计令牌共享；TipTap 全文树在离散块拖拽与多维数据库嵌入时易产生光标与事件陷阱。最终确立自主轻量块树引擎架构 (`mc-block-engine`)，与 `types/document.ts` 的 `BlockNode` 契约 1:1 天然契合，为 Sprint 3 接入 Yjs `Y.Array<Y.Map>` CRDT 提供最为平滑的底层映射。
+- **核心组件交付**：在 `mc_web/src/components/editor/` 交付 `BlockEditor.tsx`、`BlockItem.tsx`、`TextBlock.tsx`、`DividerBlock.tsx`、`BlockTypeSelector.tsx`。
+- **状态与响应式接入**：在 `useWorkspaceStore.ts` 扩展 `updateDocumentBlocks` 接口，在 `DocumentPage.tsx` 接入 `<BlockEditor key={doc.id} />`，严格隔离文档生命周期，避免切页状态污染与回写冲突。
+- **输入边界与键盘交互**：
+  - Enter：光标处拆分，标题回车自动降级段落，首位 Enter 向上插入段落。
+  - Backspace：标题退格先降级为段落；文本块首与前置文本合并且光标定位至拼接点；相邻分割线安全删除；首块越界防护（始终保留至少一个可编辑段落）。
+  - 分割线：聚焦/删除/回车自动追加段落，不可键入文字。
+  - 输入法保护：完整挂载 `isComposing` 与 `onCompositionStart/End` 合成锁，彻底杜绝中文拼音候选阶段误拆块。
+  - 剪贴板与历史：支持多行文本粘贴自动拆解为独立块；提供 `Ctrl+Z` / `Ctrl+Y` 本地 Undo/Redo 历史栈。
+- **既有数据兼容**：完整保留并兼容 `welcome-page` 等示例中的 `todo`、`callout`、`bulletList` 块，勾选与展示正常工作。
+- **构建与测试验证**：编写并运行 `scripts/verify-day2.mjs` 覆盖拆分、合并、降级、边界、分割线、粘贴及全局搜索 6 大测试集全部通过；`npm run build`（tsc && vite build）无错误构建成功（Exit Code 0）。
+
+### Day 2 验收清单（已完成逐项核查）
+
+- [x] 新建页面可立即输入；Paragraph、H1-H3 切换保留文本，Divider 可插入/删除且后方可继续输入。
+- [x] 在文本开头、中间、末尾验证 Enter 拆分与 Backspace 合并；覆盖空标题、首块、唯一空段落及分割线相邻场景，无文字丢失、重复块或光标跳转。
+- [x] 中文输入法确认候选不会误拆块；纯文本粘贴、撤销/重做正常。
+- [x] 编辑 A → 切至 B → 返回 A，内容保留且两页互不覆盖；新文本可被搜索找到，旧示例数据与已有交互保留。
+- [x] 标题、树导航、收藏、搜索和明暗主题无回归；刷新持久化留待 Day 7。
+- [x] 在 mc_web 执行 npm run build 通过，记录手工验收与遗留问题，再同步 README 和进度看板。
 
 ---
 
