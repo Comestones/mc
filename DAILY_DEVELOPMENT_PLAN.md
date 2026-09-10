@@ -57,14 +57,17 @@ flowchart LR
 - [x] **Day 1: mc_web 前端框架与 Notion 风格工作区布局搭建** *(已完成)*
   - 初始化 React 18 + Vite + TypeScript + Tailwind CSS + Lucide 前端工程骨架
   - 实现侧边栏无限层级递归文档树、页面新建/删除/重命名/收藏与展开折叠
-  - 实现顶栏动态面包屑、协同在线状态指示器与明暗 (Light/Dark) 双主题切换
+  - 实现顶栏动态面包屑、协同状态占位 UI（静态文案，未接入在线感知）与明暗 (Light/Dark) 双主题切换
   - 实现文档详情页：Emoji 图标选择器、Banner 封面图更换、实时响应式大标题
   - 实现全局快捷搜索模态框 (`Ctrl+K` / `Cmd+K`)
   - 验证 TypeScript 零类型错误与 Vite 生产构建顺利通过 (Exit Code 0)
 - [ ] **Day 2: Block 富文本编辑器核心与常用块类型渲染**
-  - 编辑器架构选型与 Block 节点状态绑定
-  - 实现段落 (Paragraph)、各级标题 (H1-H3)、分割线 (Divider)
-  - 键盘操作：`Enter` 换行分裂块、`Backspace` 删除合并块
+  - **交付目标**：将详情页静态正文接入编辑器，实现基础块编辑闭环；当前仅完成规划，尚未实现。
+  - [ ] **内核与数据契约**：验证 TipTap / BlockSuite 候选方案对基础块、中文输入、序列化和后续 Yjs 接入的支持，记录最终选择、依赖版本及与 BlockNode 的映射；定义稳定 ID、空文档默认段落及未知块保留规则。
+  - [ ] **组件与状态绑定**：在 mc_web/src/components/editor/ 建立编辑组件，替换 DocumentPage.tsx 静态正文；通过 Store 不可变更新当前页面 blocks 和 updatedAt，避免回写循环、光标重置及切页串写。保留 todo、callout、bulletList 示例数据与现有展示/勾选能力。
+  - [ ] **基础块操作**：实现 Paragraph、H1-H3 输入与类型切换，提供基础工具栏或块类型选择入口；支持 Divider 插入/删除，分割线不可输入，末尾分割线后可继续创建段落。
+  - [ ] **键盘与输入边界**：Enter 在光标处拆分文本，标题末尾回车生成段落；Backspace 在文本块首合并到前一文本块并保持光标，空标题先回退段落，首块禁止越界删除，保留至少一个可编辑段落。明确分割线相邻删除行为，处理中文输入法、纯文本粘贴及撤销/重做。
+  - [ ] **验收归档**：执行第四部分验收清单，通过后再同步两份文档完成状态。列表、Slash 菜单、拖拽、IndexedDB 和协同按后续日程推进。
 - [ ] **Day 3: 列表与待办块实现 (Todo / List)**
   - 实现无序列表 (Bullet list)、有序列表 (Numbered list)
   - 实现待办清单 (Todo block)，支持点击勾选与划线状态
@@ -205,10 +208,26 @@ flowchart LR
 
 ### 🎯 明日聚焦 (Next Day's Focus)
 - **目标**: 完成 **Day 2: Block 富文本编辑器核心与常用块类型渲染**
-- **核心待办**:
-  - [ ] 编辑器架构选型与 Block 节点状态双向响应式绑定
-  - [ ] 实现段落 (Paragraph)、各级标题 (H1-H3)、分割线 (Divider) 渲染与编辑
-  - [ ] 实现键盘 Enter 换行分裂块与 Backspace 空块回退合并逻辑
+- **状态**：已规划，待实现；任务见 Sprint 1 的 Day 2。
+- **预期产出**：编辑器组件、块数据适配与 Store 更新接口、基础操作入口及验收记录。
+
+### Day 1 核查记录（2026-09-10）
+
+- **依据**：mc_web/package.json、src/types/document.ts、src/store/useWorkspaceStore.ts、src/pages/DocumentPage.tsx 及布局/搜索组件。Day 1 按“前端框架与工作区布局”范围保留完成状态，不代表全部基础设施完成。
+- **已有实现**：React 18.3.1 + Vite + TypeScript + Tailwind CSS + Lucide + Zustand；递归页面树、页面操作、面包屑、主题、Emoji 和预设远程封面更换。重命名通过详情页标题输入框完成；搜索为标题与顶层块文本子串匹配，支持方向键选择和回车跳转。
+- **正文基线**：已有 BlockNode 定义及 H1-H3、段落、callout、bulletList 展示和 todo 勾选；正文仍为静态渲染，未安装编辑器依赖，Divider 尚无专用渲染。
+- **能力边界**：顶栏“双人协同就绪”为静态文案。文档仅存于 Zustand 内存，刷新会重置，只有主题保存至 localStorage。Monorepo、服务端、PostgreSQL 和 MinIO 尚未落地，当前从 mc_web 使用 npm 开发。
+- **待修问题**：deletePage 仅删除指定页面，未处理后代页面，会留下孤立子页面。列入 Sprint 1 待修项，在 Day 7 收尾前明确级联删除或子页面提升规则并验证。
+- **本次验证**：源码核查完成；npm run build（tsc && vite build）重跑通过，退出码 0。首次在清理旧产物时遇到权限错误，获准重跑后通过；未进行浏览器全量交互验收。
+
+### Day 2 验收清单（完成后逐项勾选）
+
+- [ ] 新建页面可立即输入；Paragraph、H1-H3 切换保留文本，Divider 可插入/删除且后方可继续输入。
+- [ ] 在文本开头、中间、末尾验证 Enter 拆分与 Backspace 合并；覆盖空标题、首块、唯一空段落及分割线相邻场景，无文字丢失、重复块或光标跳转。
+- [ ] 中文输入法确认候选不会误拆块；纯文本粘贴、撤销/重做正常。
+- [ ] 编辑 A → 切至 B → 返回 A，内容保留且两页互不覆盖；新文本可被搜索找到，旧示例数据与已有交互保留。
+- [ ] 标题、树导航、收藏、搜索和明暗主题无回归；刷新持久化留待 Day 7。
+- [ ] 在 mc_web 执行 npm run build 通过，记录手工验收与遗留问题，再同步 README 和进度看板。
 
 ---
 
