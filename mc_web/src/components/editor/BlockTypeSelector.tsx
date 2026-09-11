@@ -7,6 +7,9 @@ import {
   Minus,
   Trash2,
   Check,
+  List,
+  ListOrdered,
+  CheckSquare,
 } from 'lucide-react';
 import { BlockType } from '../../types/document';
 import { cn } from '../../utils/cn';
@@ -50,6 +53,24 @@ const TYPE_OPTIONS: TypeOption[] = [
     label: '三级标题',
     description: '最小级别的细分标题',
     icon: <Heading3 className="w-4 h-4" />,
+  },
+  {
+    type: 'bulletList',
+    label: '无序列表',
+    description: '简单的项目符号列表',
+    icon: <List className="w-4 h-4" />,
+  },
+  {
+    type: 'numberedList',
+    label: '有序列表',
+    description: '带连续自动序号的数字列表',
+    icon: <ListOrdered className="w-4 h-4" />,
+  },
+  {
+    type: 'todo',
+    label: '待办清单',
+    description: '带复选框的任务清单项',
+    icon: <CheckSquare className="w-4 h-4" />,
   },
   {
     type: 'divider',

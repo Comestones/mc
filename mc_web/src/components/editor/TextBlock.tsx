@@ -14,6 +14,8 @@ interface TextBlockProps {
   onFocusPrevious?: () => void;
   onFocusNext?: () => void;
   onPaste: (text: string, offset: number) => void;
+  onIndent?: () => void;
+  onOutdent?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   onFocus?: () => void;
@@ -111,13 +113,15 @@ export const TextBlock: React.FC<TextBlockProps> = ({
   type,
   content,
   cursorFocus,
-  onClearCursorFocus,
+  onClearCursorFocus: _onClearCursorFocus,
   onChange,
   onSplit,
   onMergeUp,
   onFocusPrevious,
   onFocusNext,
   onPaste,
+  onIndent,
+  onOutdent,
   onUndo,
   onRedo,
   onFocus,
@@ -128,9 +132,12 @@ export const TextBlock: React.FC<TextBlockProps> = ({
   // 同步外部 content 变更（避免在用户输入期间覆盖导致光标跳跃）
   useEffect(() => {
     if (!contentRef.current) return;
-    const currentText = contentRef.current.innerText;
+    const currentText = contentRef.current.innerText ?? contentRef.current.textContent ?? '';
     if (currentText !== content) {
       contentRef.current.innerText = content;
+      if (!contentRef.current.innerText && content) {
+        contentRef.current.textContent = content;
+      }
     }
     // 确保空内容时 DOM 干净以便匹配 :empty 伪类
     if (!content) {
@@ -138,17 +145,19 @@ export const TextBlock: React.FC<TextBlockProps> = ({
     }
   }, [content]);
 
+  const lastAppliedFocusRef = useRef<{ offset: number | 'start' | 'end' } | null>(null);
+
   // 当外部指令要求将光标聚焦到本块特定位置时执行
   useLayoutEffect(() => {
-    if (cursorFocus && contentRef.current) {
+    if (cursorFocus && contentRef.current && lastAppliedFocusRef.current !== cursorFocus) {
+      lastAppliedFocusRef.current = cursorFocus;
       setCaretOffset(contentRef.current, cursorFocus.offset);
-      onClearCursorFocus?.();
     }
-  }, [cursorFocus, onClearCursorFocus]);
+  }, [cursorFocus]);
 
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     if (isComposingRef.current) return;
-    const text = e.currentTarget.innerText || '';
+    const text = e.currentTarget.innerText ?? e.currentTarget.textContent ?? '';
     onChange(text);
   };
 
@@ -158,13 +167,23 @@ export const TextBlock: React.FC<TextBlockProps> = ({
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLDivElement>) => {
     isComposingRef.current = false;
-    const text = e.currentTarget.innerText || '';
+    const text = e.currentTarget.innerText ?? e.currentTarget.textContent ?? '';
     onChange(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // 中文/输入法合成阶段不拦截任何按键
     if (e.nativeEvent.isComposing || isComposingRef.current) {
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        onOutdent?.();
+      } else {
+        onIndent?.();
+      }
       return;
     }
 
@@ -197,7 +216,7 @@ export const TextBlock: React.FC<TextBlockProps> = ({
 
     if (e.key === 'ArrowDown') {
       const offset = getCaretOffset(contentRef.current!);
-      const totalLen = (contentRef.current?.innerText || '').length;
+      const totalLen = (contentRef.current?.innerText ?? contentRef.current?.textContent ?? '').length;
       if (offset >= totalLen) {
         e.preventDefault();
         onFocusNext?.();
