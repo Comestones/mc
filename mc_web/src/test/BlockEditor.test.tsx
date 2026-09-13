@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { BlockEditor } from '../components/editor/BlockEditor';
+import { DocumentPage } from '../pages/DocumentPage';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { BlockNode, DocumentItem } from '../types/document';
 
@@ -494,7 +495,8 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(getDocBlocks('doc-tab-test')[1]?.properties?.level).toBe(0);
   });
 
-  it('17. 列表项块首 Backspace：子级先缩退，根级首块降级为段落，存在前项时合并文本', () => {
+  it('17. 列表项块首 Backspace：子级先缩退，根级首块降级为段落，存在前项时合并文本与删除分割线', () => {
+    // 17a: 子级缩退与根级首块降级为段落（清洗 properties）
     const blocks: BlockNode[] = [
       { id: 'b-lvl1', type: 'bulletList', content: '单块子级', properties: { level: 1 } },
     ];
@@ -511,13 +513,54 @@ describe('BlockEditor Component & Store Integration', () => {
     const state1 = getDocBlocks('doc-backspace-list');
     expect(state1[0]?.properties?.level).toBe(0);
 
-    // 根级首块按退格：降级为普通段落 (paragraph)
+    // 根级首块按退格：降级为普通段落 (paragraph) 且清理 properties
     act(() => {
       fireEvent.keyDown(itemEl, { key: 'Backspace' });
     });
     const state2 = getDocBlocks('doc-backspace-list');
     expect(state2[0]?.type).toBe('paragraph');
     expect(state2[0]?.content).toBe('单块子级');
+    expect(state2[0]?.properties).toBeUndefined();
+
+    // 17b: 存在兼容前项时，根级列表块退格与前项文本合并并删除自身
+    const mergeBlocks: BlockNode[] = [
+      { id: 'p-prev', type: 'paragraph', content: '前置文本' },
+      { id: 'b-curr', type: 'bulletList', content: '后续列表项', properties: { level: 0 } },
+    ];
+    registerTestDoc('doc-backspace-merge', mergeBlocks);
+    render(<BlockEditor documentId="doc-backspace-merge" initialBlocks={mergeBlocks} />);
+
+    const currEl = screen.getByText('后续列表项');
+    setCaretPosition(currEl, 0);
+
+    act(() => {
+      fireEvent.keyDown(currEl, { key: 'Backspace' });
+    });
+
+    const stateMerge = getDocBlocks('doc-backspace-merge');
+    expect(stateMerge.length).toBe(1);
+    expect(stateMerge[0]?.id).toBe('p-prev');
+    expect(stateMerge[0]?.content).toBe('前置文本后续列表项');
+
+    // 17c: 前项为分割线时，根级列表块退格删除分割线
+    const divBlocks: BlockNode[] = [
+      { id: 'd-div', type: 'divider', content: '' },
+      { id: 'b-after-div', type: 'bulletList', content: '分割线下列表', properties: { level: 0 } },
+    ];
+    registerTestDoc('doc-backspace-div', divBlocks);
+    render(<BlockEditor documentId="doc-backspace-div" initialBlocks={divBlocks} />);
+
+    const afterDivEl = screen.getByText('分割线下列表');
+    setCaretPosition(afterDivEl, 0);
+
+    act(() => {
+      fireEvent.keyDown(afterDivEl, { key: 'Backspace' });
+    });
+
+    const stateDiv = getDocBlocks('doc-backspace-div');
+    expect(stateDiv.length).toBe(1);
+    expect(stateDiv[0]?.id).toBe('b-after-div');
+    expect(stateDiv[0]?.content).toBe('分割线下列表');
   });
 
   it('18. 列表块内多行纯文本粘贴：自动拆解为同类型同级的新列表块', () => {
@@ -547,5 +590,609 @@ describe('BlockEditor Component & Store Integration', () => {
       expect(b.type).toBe('numberedList');
       expect(b.properties?.level).toBe(1);
     });
+  });
+
+  it('19. 规范化函数在组件挂载与渲染时的容错：负数、小数、字符串、NaN、Infinity 及非布尔 checked', () => {
+    const malformedBlocks: BlockNode[] = [
+      { id: 'b-dec', type: 'bulletList', content: '小数层级', properties: { level: 1.8 } },
+      { id: 'b-neg', type: 'bulletList', content: '负数层级', properties: { level: -5 } },
+      { id: 'b-str', type: 'numberedList', content: '字符串层级', properties: { level: '2' as any } },
+      { id: 'b-nan', type: 'numberedList', content: 'NaN层级', properties: { level: NaN } },
+      { id: 'b-inf', type: 'numberedList', content: '无穷大层级', properties: { level: Infinity } },
+      { id: 't-str-chk', type: 'todo', content: '非布尔勾选', properties: { level: 0, checked: 'true' as any } },
+      { id: 't-num-chk', type: 'todo', content: '数字勾选', properties: { level: 0, checked: 1 as any } },
+      { id: 'p-residue', type: 'paragraph', content: '残留属性段落', properties: { level: 2, checked: true } },
+    ];
+    registerTestDoc('doc-malformed', malformedBlocks);
+    render(<BlockEditor documentId="doc-malformed" initialBlocks={malformedBlocks} />);
+
+    // 验证内部规范化后写入 Store 的属性
+    const normalized = getDocBlocks('doc-malformed');
+    expect(normalized[0]?.properties?.level).toBe(1); // 1.8 向下取整为 1
+    expect(normalized[1]?.properties?.level).toBe(0); // -5 归一化为 0
+    expect(normalized[2]?.properties?.level).toBe(0); // '2' 归一化为 0
+    expect(normalized[3]?.properties?.level).toBe(0); // NaN 归一化为 0
+    expect(normalized[4]?.properties?.level).toBe(0); // Infinity 归一化为 0
+    expect(normalized[5]?.properties?.checked).toBe(false); // 'true' 归一化为 false
+    expect(normalized[6]?.properties?.checked).toBe(false); // 1 归一化为 false
+    expect(normalized[7]?.properties).toBeUndefined(); // paragraph 剥除 level 和 checked
+
+    // 验证渲染视图中的视觉缩进：小数层级按 1*24=24px 缩进，负数/字符串/NaN/Infinity 无额外缩进样式
+    const decWrapper = document.querySelector('[data-block-wrapper-id="b-dec"] div[style]') as HTMLElement;
+    expect(decWrapper?.style.paddingLeft).toBe('24px');
+
+    const strWrapper = document.querySelector('[data-block-wrapper-id="b-str"] div[style]') as HTMLElement;
+    expect(strWrapper).toBeNull(); // 0 级无 paddingLeft 样式
+
+    // 验证 Todo aria-checked 严格为 false
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[0].getAttribute('aria-checked')).toBe('false');
+    expect(checkboxes[1].getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('20. 真实组件 BlockTypeSelector 转换链路：保留 ID/内容，离开列表彻底清除 level/checked，进入列表明确初始化', () => {
+    const initial: BlockNode[] = [
+      { id: 'b-trans', type: 'todo', content: '待转换核心文本', properties: { level: 1, checked: true } },
+    ];
+    registerTestDoc('doc-type-trans', initial);
+    render(<BlockEditor documentId="doc-type-trans" initialBlocks={initial} />);
+
+    // 打开类型选择器
+    const moreBtn = screen.getByTitle('切换块类型或操作');
+    act(() => {
+      fireEvent.click(moreBtn);
+    });
+
+    // 20a: 转为无序列表 (bulletList)
+    const bulletOption = screen.getByText('无序列表');
+    act(() => {
+      fireEvent.click(bulletOption);
+    });
+
+    const state1 = getDocBlocks('doc-type-trans');
+    expect(state1[0]?.type).toBe('bulletList');
+    expect(state1[0]?.id).toBe('b-trans');
+    expect(state1[0]?.content).toBe('待转换核心文本');
+    expect(state1[0]?.properties?.level).toBe(1); // 列表族互转保留 level
+    expect(state1[0]?.properties?.checked).toBeUndefined(); // checked 被彻底清除
+
+    // 20b: 从 bulletList 转为 paragraph (离开列表族)
+    act(() => {
+      fireEvent.click(moreBtn);
+    });
+    const paragraphOption = screen.getByText('正文段落');
+    act(() => {
+      fireEvent.click(paragraphOption);
+    });
+
+    const state2 = getDocBlocks('doc-type-trans');
+    expect(state2[0]?.type).toBe('paragraph');
+    expect(state2[0]?.id).toBe('b-trans');
+    expect(state2[0]?.content).toBe('待转换核心文本');
+    expect(state2[0]?.properties).toBeUndefined(); // level 和 checked 彻底被清除
+
+    // 20c: 从 paragraph 再次转回 bulletList (重新进入列表族)
+    act(() => {
+      fireEvent.click(moreBtn);
+    });
+    act(() => {
+      fireEvent.click(screen.getByText('无序列表'));
+    });
+
+    const state3 = getDocBlocks('doc-type-trans');
+    expect(state3[0]?.type).toBe('bulletList');
+    expect(state3[0]?.properties?.level).toBe(0); // 必须重新初始化为 0，而非残留 1！
+    expect(state3[0]?.properties?.checked).toBeUndefined();
+  });
+
+  it('21. Todo 复选框支持键盘 Space 与 Enter 键无障碍切换勾选状态', () => {
+    const initial: BlockNode[] = [
+      { id: 't-key', type: 'todo', content: '键盘操作任务', properties: { level: 0, checked: false } },
+    ];
+    registerTestDoc('doc-todo-keys', initial);
+    render(<BlockEditor documentId="doc-todo-keys" initialBlocks={initial} />);
+
+    const checkbox = screen.getByRole('checkbox', { name: '标记为已完成' });
+
+    // 按 Space 键切换为勾选
+    act(() => {
+      fireEvent.keyDown(checkbox, { key: ' ' });
+    });
+    expect(getDocBlocks('doc-todo-keys')[0]?.properties?.checked).toBe(true);
+
+    // 按 Enter 键切换为未勾选
+    const checkedBox = screen.getByRole('checkbox', { name: '标记为未完成' });
+    act(() => {
+      fireEvent.keyDown(checkedBox, { key: 'Enter' });
+    });
+    expect(getDocBlocks('doc-todo-keys')[0]?.properties?.checked).toBe(false);
+  });
+
+  it('22. 列表场景中文输入法 IME 合成期 (isComposing) 不拦截 Enter、Tab 或 Backspace', () => {
+    const listBlocks: BlockNode[] = [
+      { id: 'b-ime-1', type: 'bulletList', content: '第一项', properties: { level: 0 } },
+      { id: 'b-ime-2', type: 'bulletList', content: '第二项', properties: { level: 0 } },
+    ];
+    registerTestDoc('doc-list-ime', listBlocks);
+    render(<BlockEditor documentId="doc-list-ime" initialBlocks={listBlocks} />);
+
+    const item2El = screen.getByText('第二项');
+    setCaretPosition(item2El, 2);
+
+    // 开启中文输入法合成
+    act(() => {
+      fireEvent.compositionStart(item2El);
+    });
+
+    // 合成期按下 Enter (如选拼音)
+    act(() => {
+      fireEvent.keyDown(item2El, { key: 'Enter' });
+    });
+    expect(getDocBlocks('doc-list-ime').length).toBe(2); // 禁止拆分
+
+    // 合成期按下 Tab
+    act(() => {
+      fireEvent.keyDown(item2El, { key: 'Tab' });
+    });
+    expect(getDocBlocks('doc-list-ime')[1]?.properties?.level).toBe(0); // 禁止缩进
+
+    // 合成期光标在 0 处按 Backspace
+    setCaretPosition(item2El, 0);
+    act(() => {
+      fireEvent.keyDown(item2El, { key: 'Backspace' });
+    });
+    expect(getDocBlocks('doc-list-ime').length).toBe(2); // 禁止向上合并
+
+    // 结束输入法合成
+    act(() => {
+      fireEvent.compositionEnd(item2El, { currentTarget: { innerText: '第二项输入完成' } });
+    });
+  });
+
+  it('23. 列表组件在浅色/深色主题与窄屏响应式容器下的类名与样式渲染正确', () => {
+    const blocks: BlockNode[] = [
+      { id: 'b-resp', type: 'bulletList', content: '响应式项', properties: { level: 1 } },
+      { id: 't-resp', type: 'todo', content: '待办暗色项', properties: { level: 0, checked: true } },
+    ];
+    registerTestDoc('doc-responsive', blocks);
+    const { container } = render(<BlockEditor documentId="doc-responsive" initialBlocks={blocks} />);
+
+    // 验证窄屏响应式边距：采用 sm 前缀响应式 padding/margin
+    const wrapperEl = container.querySelector('[data-block-wrapper-id="b-resp"]');
+    expect(wrapperEl?.className).toContain('-ml-8 pl-8 sm:-ml-12 sm:pl-12');
+
+    // 验证待办完成项的暗色类名
+    const todoTextContainer = container.querySelector('.line-through');
+    expect(todoTextContainer?.className).toContain('dark:text-text-muted-dark');
+  });
+
+  it('24. [P1 真实链路集成] 挂载 DocumentPage：列表拆分、缩进、勾选、粘贴经 Store 同步后 Ctrl+Z / Ctrl+Y 完美可逆', () => {
+    const pageId = 'doc-page-integration';
+    registerTestDoc(pageId, [
+      { id: 'b-it-1', type: 'bulletList', content: '主列表项A', properties: { level: 0 } },
+      { id: 'b-it-2', type: 'bulletList', content: '主列表项B', properties: { level: 0 } },
+      { id: 't-it-3', type: 'todo', content: '待办项C', properties: { level: 0, checked: false } },
+    ]);
+    useWorkspaceStore.setState({ activePageId: pageId });
+
+    render(<DocumentPage />);
+
+    // 验证初始渲染通过 DocumentPage 正常展示
+    expect(screen.getByText('主列表项A')).toBeInTheDocument();
+    expect(screen.getByText('主列表项B')).toBeInTheDocument();
+    expect(screen.getByText('待办项C')).toBeInTheDocument();
+
+    // 24a: 列表拆分并撤销重做
+    const itemA = screen.getByText('主列表项A');
+    setCaretPosition(itemA, 4); // "主列表项" | "A"
+    act(() => {
+      fireEvent.keyDown(itemA, { key: 'Enter' });
+    });
+
+    // Store 同步更新，并且 DocumentPage 会把新的 doc.blocks 回传给 BlockEditor
+    expect(getDocBlocks(pageId).length).toBe(4);
+
+    // 在当前活动的块上按下 Ctrl+Z
+    const splitNewItem = screen.getByText('A');
+    act(() => {
+      fireEvent.keyDown(splitNewItem, { key: 'z', ctrlKey: true });
+    });
+
+    // 关键验证：经过父组件重渲染后，Ctrl+Z 依然生效，恢复为 3 个块！(P1 修复证明)
+    expect(getDocBlocks(pageId).length).toBe(3);
+    expect(screen.getByText('主列表项A')).toBeInTheDocument();
+
+    // Ctrl+Y 重做
+    const restoredItem = screen.getByText('主列表项A');
+    act(() => {
+      fireEvent.keyDown(restoredItem, { key: 'y', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId).length).toBe(4);
+
+    // 撤销回初始状态以进行下一步测试
+    act(() => {
+      fireEvent.keyDown(screen.getByText('A'), { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId).length).toBe(3);
+
+    // 24b: 列表 Tab 缩进并撤销
+    const itemB = screen.getByText('主列表项B');
+    act(() => {
+      fireEvent.keyDown(itemB, { key: 'Tab' });
+    });
+    expect(getDocBlocks(pageId)[1]?.properties?.level).toBe(1);
+
+    // 按 Ctrl+Z 撤销缩进
+    act(() => {
+      fireEvent.keyDown(itemB, { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId)[1]?.properties?.level).toBe(0);
+
+    // 24c: Todo 勾选并撤销
+    const todoCheckBtn = screen.getByRole('checkbox', { name: '标记为已完成' });
+    act(() => {
+      fireEvent.click(todoCheckBtn);
+    });
+    expect(getDocBlocks(pageId)[2]?.properties?.checked).toBe(true);
+
+    const todoText = screen.getByText('待办项C');
+    act(() => {
+      fireEvent.keyDown(todoText, { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId)[2]?.properties?.checked).toBe(false);
+
+    // 24d: 多行粘贴并撤销
+    setCaretPosition(todoText, 4);
+    const clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? '多行1\n多行2' : ''),
+    };
+    act(() => {
+      fireEvent.paste(todoText, { clipboardData });
+    });
+    expect(getDocBlocks(pageId).length).toBe(4);
+
+    const pastedItem = screen.getByText('多行2');
+    act(() => {
+      fireEvent.keyDown(pastedItem, { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId).length).toBe(3);
+    expect(getDocBlocks(pageId)[2]?.content).toBe('待办项C');
+  });
+
+  it('25. [P1 页面切换隔离] 切换 activePageId 时干净重置新文档历史并清理定时器', () => {
+    registerTestDoc('page-a', [{ id: 'pa-1', type: 'paragraph', content: '页面A文本' }]);
+    registerTestDoc('page-b', [{ id: 'pb-1', type: 'paragraph', content: '页面B文本' }]);
+
+    useWorkspaceStore.setState({ activePageId: 'page-a' });
+    const { rerender } = render(<DocumentPage />);
+
+    expect(screen.getByText('页面A文本')).toBeInTheDocument();
+
+    // 在页面 A 输入并产生历史
+    const paEl = screen.getByText('页面A文本');
+    setCaretPosition(paEl, 5);
+    act(() => {
+      fireEvent.keyDown(paEl, { key: 'Enter' });
+    });
+    expect(getDocBlocks('page-a').length).toBe(2);
+
+    // 切换到页面 B
+    act(() => {
+      useWorkspaceStore.setState({ activePageId: 'page-b' });
+    });
+    rerender(<DocumentPage />);
+
+    expect(screen.getByText('页面B文本')).toBeInTheDocument();
+    expect(screen.queryByText('页面A文本')).not.toBeInTheDocument();
+
+    // 页面 B 的历史索引应为 0，按 Ctrl+Z 不能回退到页面 A 的操作
+    const pbEl = screen.getByText('页面B文本');
+    act(() => {
+      fireEvent.keyDown(pbEl, { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks('page-b').length).toBe(1);
+    expect(getDocBlocks('page-b')[0]?.content).toBe('页面B文本');
+  });
+
+  it('26. [Day 4] 代码块 (CodeBlock) 渲染、语言切换、折行切换与一键复制', async () => {
+    const docId = 'doc-code-1';
+    const initial: BlockNode[] = [
+      {
+        id: 'code-1',
+        type: 'code',
+        content: 'const answer = 42;',
+        properties: { language: 'javascript', wrap: false },
+      },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const textarea = screen.getByLabelText('代码编辑区') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('const answer = 42;');
+
+    // 语言下拉切换为 python
+    const langSelect = screen.getByRole('combobox', { name: '代码编程语言' }) as HTMLSelectElement;
+    expect(langSelect.value).toBe('javascript');
+
+    act(() => {
+      fireEvent.change(langSelect, { target: { value: 'python' } });
+    });
+    expect(getDocBlocks(docId)[0]?.properties?.language).toBe('python');
+
+    // 折行切换
+    const wrapBtn = screen.getByRole('button', { name: /折行|滚动/ });
+    act(() => {
+      fireEvent.click(wrapBtn);
+    });
+    expect(getDocBlocks(docId)[0]?.properties?.wrap).toBe(true);
+
+    // 复制代码测试
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const copyBtn = screen.getByRole('button', { name: '复制代码' });
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
+    expect(screen.getByText('已复制')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+  });
+
+  it('27. [Day 4] 代码块 (CodeBlock) 键盘交互：Tab 缩进 2 空格、Shift+Tab 缩退、Ctrl+Enter 退出、空 Backspace 降级', () => {
+    const docId = 'doc-code-kb';
+    const initial: BlockNode[] = [
+      {
+        id: 'code-kb',
+        type: 'code',
+        content: 'line1\n  line2',
+        properties: { language: 'typescript', wrap: false },
+      },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const textarea = screen.getByLabelText('代码编辑区') as HTMLTextAreaElement;
+
+    // 27a: Tab 缩进 2 空格
+    textarea.selectionStart = 5; // "line1|"
+    textarea.selectionEnd = 5;
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: false });
+    });
+    expect(getDocBlocks(docId)[0]?.content).toBe('line1  \n  line2');
+
+    // 27b: Shift+Tab 缩退 2 空格
+    const curContent = getDocBlocks(docId)[0]?.content || '';
+    textarea.selectionStart = curContent.indexOf('line2');
+    textarea.selectionEnd = textarea.selectionStart;
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true });
+    });
+    expect(getDocBlocks(docId)[0]?.content).toBe('line1  \nline2');
+
+    // 27c: Ctrl+Enter 退出到下方新段落
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+    });
+    const blocksAfterCtrlEnter = getDocBlocks(docId);
+    expect(blocksAfterCtrlEnter.length).toBe(2);
+    expect(blocksAfterCtrlEnter[1]?.type).toBe('paragraph');
+    expect(blocksAfterCtrlEnter[1]?.content).toBe('');
+
+    // 27d: 空代码块按 Backspace 降级为普通段落
+    const emptyDocId = 'doc-code-empty';
+    registerTestDoc(emptyDocId, [
+      { id: 'c-empty', type: 'code', content: '', properties: { language: 'go', wrap: false } },
+    ]);
+    render(<BlockEditor documentId={emptyDocId} initialBlocks={[{ id: 'c-empty', type: 'code', content: '', properties: { language: 'go', wrap: false } }]} />);
+    const emptyTextareas = screen.getAllByLabelText('代码编辑区');
+    const targetEmptyTextarea = emptyTextareas[emptyTextareas.length - 1];
+    act(() => {
+      fireEvent.keyDown(targetEmptyTextarea, { key: 'Backspace' });
+    });
+    const degradedBlocks = getDocBlocks(emptyDocId);
+    expect(degradedBlocks[0]?.type).toBe('paragraph');
+    expect(degradedBlocks[0]?.properties).toBeUndefined();
+  });
+
+  it('28. [Day 4] 安全语法高亮渲染：完全杜绝 dangerouslySetInnerHTML，防 XSS 注入', () => {
+    const docId = 'doc-code-xss';
+    const initial: BlockNode[] = [
+      {
+        id: 'code-xss',
+        type: 'code',
+        content: '<script>alert("xss")</script><img onerror=alert(1) />',
+        properties: { language: 'html', wrap: false },
+      },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    // 检查是否有任何被注入的 script 或 img 危险标签
+    expect(document.querySelector('script[src*="xss"]')).toBeNull();
+    expect(document.querySelector('img[onerror]')).toBeNull();
+    // 文本内容纯文本高亮
+    expect(screen.getByText(/alert\("xss"\)/)).toBeInTheDocument();
+  });
+
+  it('29. [Day 4] 引用块 (QuoteBlock) 渲染、拆分与回车/退格退出降级', () => {
+    const docId = 'doc-quote';
+    const initial: BlockNode[] = [
+      { id: 'q-1', type: 'quote', content: '登高壮观天地间大江茫茫去不还' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const quoteWrapper = document.querySelector('[data-block-quote-id="q-1"]');
+    expect(quoteWrapper).toBeInTheDocument();
+    expect(quoteWrapper?.className).toContain('border-l-4');
+
+    // 29a: 在文字中间回车拆分为两个引用块
+    const quoteTextEl = screen.getByText('登高壮观天地间大江茫茫去不还');
+    setCaretPosition(quoteTextEl, 7); // 登高壮观天地间 | 大江茫茫去不还
+    act(() => {
+      fireEvent.keyDown(quoteTextEl, { key: 'Enter' });
+    });
+
+    const splitBlocks = getDocBlocks(docId);
+    expect(splitBlocks.length).toBe(2);
+    expect(splitBlocks[0]?.type).toBe('quote');
+    expect(splitBlocks[0]?.content).toBe('登高壮观天地间');
+    expect(splitBlocks[1]?.type).toBe('quote');
+    expect(splitBlocks[1]?.content).toBe('大江茫茫去不还');
+
+    // 29b: 空引用块按回车退出降级为普通段落
+    const emptyQuoteDoc = 'doc-quote-empty';
+    registerTestDoc(emptyQuoteDoc, [{ id: 'q-empty', type: 'quote', content: '' }]);
+    render(<BlockEditor documentId={emptyQuoteDoc} initialBlocks={[{ id: 'q-empty', type: 'quote', content: '' }]} />);
+
+    const emptyQuoteEl = document.querySelector('[data-block-quote-id="q-empty"] [contenteditable="true"]') as HTMLElement;
+    act(() => {
+      fireEvent.keyDown(emptyQuoteEl, { key: 'Enter' });
+    });
+    expect(getDocBlocks(emptyQuoteDoc)[0]?.type).toBe('paragraph');
+
+    // 29c: 空引用块按退格降级为普通段落
+    const emptyQuoteDoc2 = 'doc-quote-empty-bs';
+    registerTestDoc(emptyQuoteDoc2, [{ id: 'q-empty-2', type: 'quote', content: '' }]);
+    render(<BlockEditor documentId={emptyQuoteDoc2} initialBlocks={[{ id: 'q-empty-2', type: 'quote', content: '' }]} />);
+
+    const emptyQuoteEl2 = document.querySelector('[data-block-quote-id="q-empty-2"] [contenteditable="true"]') as HTMLElement;
+    act(() => {
+      fireEvent.keyDown(emptyQuoteEl2, { key: 'Backspace' });
+    });
+    expect(getDocBlocks(emptyQuoteDoc2)[0]?.type).toBe('paragraph');
+  });
+
+  it('30. [Day 4] 提示块 (CalloutBlock) 图标选择、5 色基调切换、拆分与空块退出', () => {
+    const docId = 'doc-callout';
+    const initial: BlockNode[] = [
+      {
+        id: 'cal-1',
+        type: 'callout',
+        content: '注意系统部署环境',
+        properties: { icon: '💡', tone: 'neutral' },
+      },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const calloutWrapper = document.querySelector('[data-block-callout-id="cal-1"]');
+    expect(calloutWrapper).toBeInTheDocument();
+    expect(calloutWrapper?.getAttribute('data-callout-tone')).toBe('neutral');
+
+    // 30a: 打开色调选择器切换为 warning
+    const toneBtn = screen.getByRole('button', { name: '切换提示色调' });
+    act(() => {
+      fireEvent.click(toneBtn);
+    });
+    const warningToneBtn = screen.getByRole('button', { name: /警告黄/ });
+    act(() => {
+      fireEvent.click(warningToneBtn);
+    });
+    expect(getDocBlocks(docId)[0]?.properties?.tone).toBe('warning');
+
+    // 30b: 打开预设图标选择器切换为 🔥
+    const iconBtn = screen.getByRole('button', { name: /更换图标/ });
+    act(() => {
+      fireEvent.click(iconBtn);
+    });
+    const fireEmojiBtn = screen.getByRole('button', { name: '🔥' });
+    act(() => {
+      fireEvent.click(fireEmojiBtn);
+    });
+    expect(getDocBlocks(docId)[0]?.properties?.icon).toBe('🔥');
+
+    // 30c: 非空提示块回车拆分（继承相同的图标与色调）
+    const calloutTextEl = screen.getByText('注意系统部署环境');
+    setCaretPosition(calloutTextEl, 4); // 注意系统 | 部署环境
+    act(() => {
+      fireEvent.keyDown(calloutTextEl, { key: 'Enter' });
+    });
+    const splitCallouts = getDocBlocks(docId);
+    expect(splitCallouts.length).toBe(2);
+    expect(splitCallouts[0]?.content).toBe('注意系统');
+    expect(splitCallouts[1]?.type).toBe('callout');
+    expect(splitCallouts[1]?.content).toBe('部署环境');
+    expect(splitCallouts[1]?.properties?.icon).toBe('🔥');
+    expect(splitCallouts[1]?.properties?.tone).toBe('warning');
+
+    // 30d: 空提示块回车退出降级为普通段落
+    const emptyCalDoc = 'doc-cal-empty';
+    registerTestDoc(emptyCalDoc, [{ id: 'cal-empty', type: 'callout', content: '', properties: { icon: '💡', tone: 'info' } }]);
+    render(<BlockEditor documentId={emptyCalDoc} initialBlocks={[{ id: 'cal-empty', type: 'callout', content: '', properties: { icon: '💡', tone: 'info' } }]} />);
+    const emptyCalTextEl = document.querySelector('[data-block-callout-id="cal-empty"] [contenteditable="true"]') as HTMLElement;
+    act(() => {
+      fireEvent.keyDown(emptyCalTextEl, { key: 'Enter' });
+    });
+    expect(getDocBlocks(emptyCalDoc)[0]?.type).toBe('paragraph');
+  });
+
+  it('31. [Day 4] 容器隔离：在 Code / Callout 下方块按 Backspace 严格禁止文本合入容器', () => {
+    const docId = 'doc-container-iso';
+    const initial: BlockNode[] = [
+      { id: 'c-code', type: 'code', content: 'const a = 1;', properties: { language: 'javascript', wrap: false } },
+      { id: 'p-below', type: 'paragraph', content: '段落文本' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const pEl = screen.getByText('段落文本');
+    setCaretPosition(pEl, 0);
+
+    // 在段落块首按 Backspace
+    act(() => {
+      fireEvent.keyDown(pEl, { key: 'Backspace' });
+    });
+
+    // 容器隔离保障：代码块内容绝不被串入“段落文本”，两块独立存在
+    const blocksAfter = getDocBlocks(docId);
+    expect(blocksAfter.length).toBe(2);
+    expect(blocksAfter[0]?.type).toBe('code');
+    expect(blocksAfter[0]?.content).toBe('const a = 1;');
+    expect(blocksAfter[1]?.type).toBe('paragraph');
+    expect(blocksAfter[1]?.content).toBe('段落文本');
+  });
+
+  it('32. [Day 4] DocumentPage 级 Code / Quote / Callout 类型切换与撤销重做 (Undo/Redo)', () => {
+    const pageId = 'doc-undo-day4';
+    const initial: BlockNode[] = [
+      { id: 'blk-switch', type: 'paragraph', content: '待转换核心内容' },
+    ];
+    registerTestDoc(pageId, initial);
+    useWorkspaceStore.setState({ activePageId: pageId });
+    render(<DocumentPage />);
+
+    // 切换类型为 code
+    const typeTrigger = screen.getByRole('button', { name: '切换块类型或操作' });
+    act(() => {
+      fireEvent.click(typeTrigger);
+    });
+    const codeOpt = screen.getByRole('button', { name: /代码块/ });
+    act(() => {
+      fireEvent.click(codeOpt);
+    });
+
+    expect(getDocBlocks(pageId)[0]?.type).toBe('code');
+    expect(getDocBlocks(pageId)[0]?.properties?.language).toBe('javascript');
+
+    // 按 Ctrl+Z 撤销类型切换
+    const textarea = screen.getByLabelText('代码编辑区');
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'z', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId)[0]?.type).toBe('paragraph');
+    expect(getDocBlocks(pageId)[0]?.properties).toBeUndefined();
+
+    // 按 Ctrl+Y 重做恢复为 code
+    const pEl = screen.getByText('待转换核心内容');
+    act(() => {
+      fireEvent.keyDown(pEl, { key: 'y', ctrlKey: true });
+    });
+    expect(getDocBlocks(pageId)[0]?.type).toBe('code');
   });
 });

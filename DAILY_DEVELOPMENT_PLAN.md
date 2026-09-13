@@ -76,9 +76,27 @@ flowchart LR
   - [x] **Enter / Backspace**：非空列表或待办在光标处拆分为相同类型和同级的新块；空列表或未勾选空待办按 Enter 退出为同级 Paragraph；块首 Backspace 先与兼容前项合并，前项不存在时降级为 Paragraph，且不丢失除 Todo 勾选状态外的块属性。
   - [x] **Tab 嵌套规则**：仅当前一相邻块属于相同列表家族（Bullet、Numbered 或 Todo）时，`Tab` 才将当前项缩进一级；`Shift+Tab` 将 level 减一，根级保持不变。禁止跳级、循环或跨段落/标题缩进，编号与视觉层级必须即时重算。
   - [x] **验收与回归**：新增真实组件测试与 `verify:day3` 脚本，覆盖渲染、勾选、转换、拆分/退出、合并、Tab/Shift+Tab、编号、嵌套边界、粘贴和切页隔离；执行 `npm test`、`npm run verify:day2`、`npm run verify:day3`、`npm run build`，并手工检查键盘导航、中文输入法、亮暗主题和窄屏布局后再标记完成。
-- [ ] **Day 4: 增强块组件 (Code / Quote / Callout)**
-  - 代码高亮块 (Code block)：支持语言选择、语法高亮与一键复制代码
-  - 引用块 (Quote block) 与 提示块 (Callout block，支持自定义 Icon 与背景色)
+- [x] **Day 4: 增强块组件 (Code / Quote / Callout)** *(已完成)*
+  - **交付目标**：在轻量块编辑器上交付具备数据规范化、交互安全、键盘流转闭环的 Code、Quote 与 Callout 增强块组件。
+  - [x] **数据契约与安全**：在 `blockUtils.ts` 定义 Code 的 `language`（支持 14 种主流语言，缺省 `plaintext`）与 `wrap`（布尔值，缺省 `false` 横向滚动）；定义 Callout 的 `icon`（缺省 `💡`）与 5 色基调 `tone` (`neutral`, `info`, `success`, `warning`, `danger`)；实现 `isTextMergeable` 容器隔离白名单与 `cleanBlockProperties` 跨类型属性清洗，彻底杜绝属性污染。
+  - [x] **Code block (代码块)**：
+    - 采用 Prism.js token 纯 React 节点递归渲染语法树，100% 杜绝 `dangerouslySetInnerHTML` 与 XSS 注入风险。
+    - 工具栏支持 14 种编程语言动态选择、横向滚动与自动折行切换、一键复制到剪贴板（带 2s 成功反馈与非阻塞降级）。
+    - 键盘交互：支持 `Tab` 在光标处缩进 2 个空格、`Shift+Tab` 缩退当前行 2 个空格；支持 `Ctrl/Cmd+Enter` 在下方插入段落并自动聚焦退出；空代码块按 `Backspace` 降级为普通段落。
+  - [x] **Quote block (引用块)**：
+    - 采用语义化左侧强调边框 (`border-l-4 border-blue-500`) 与斜体排版，复用公共文本编辑能力。
+    - 键盘交互：非空内容按 `Enter` 在光标处拆分为两个引用块；空白引用块按 `Enter` 退出为普通段落；空白引用块按 `Backspace` 降级为普通段落；首项退格向可合并文本前项安全合并。
+  - [x] **Callout block (提示块)**：
+    - 升级为独立多功能容器组件，左侧支持 Popover 快速选择 12 款预设常用 Emoji/图标，右上角悬浮支持 5 种主题色彩基调切换。
+    - 键盘交互：非空提示块按 `Enter` 拆分出同等图标与色调的同类提示块；空提示块按 `Enter` 退出为普通段落；空提示块按 `Backspace` 降级为普通段落。
+  - [x] **容器边界隔离保护**：
+    - 在 `BlockEditor.tsx` 中落实容器隔离：当在 Code 或 Callout 下方块按 `Backspace` 时，严格禁止段落/列表文字合入容器破坏结构，仅安全转移光标焦点至容器末尾。
+  - [x] **历史回退与多页隔离**：
+    - 所有语言、色调、图标、折行修改与类型转换完整接入撤销/重做 (Undo/Redo) 历史栈。
+  - [x] **测试套件与生产构建**：
+    - 新增 `scripts/verify-day4.mjs` 覆盖语言/折行/色调/图标规范化、属性清洗、容器隔离白名单、Tab 缩进与状态机流转。
+    - 扩充 Vitest 组件测试至 **32 项**（新增 7 项深度覆盖代码块渲染、语言折行切换、剪贴板复制、Tab 缩进、XSS 注入防御、引用块拆分退出、提示块图标色调切换、容器隔离退格防护与 Store Undo/Redo）。
+    - 验证全量通过：`npm test` (32/32 通过)、`npm run verify:day2` (通过)、`npm run verify:day3` (通过)、`npm run verify:day4` (通过)、`npm run build` (零错误生产打包)。
 - [ ] **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单**
   - 输入 `/` 呼出块选择快捷菜单（支持模糊拼音/英文搜索过滤）
   - 选中文字后呼出 Bubble Menu（加粗、斜体、下划线、删除线、行内代码、超链接）
@@ -203,18 +221,17 @@ flowchart LR
 
 ### 📊 当前整体进度概览
 - **当前所处 Sprint**: **Sprint 1 (脚手架与核心编辑器)**
-- **已完成天数**: `3 / 35`
-- **总体完成度**: `9%`
+- **已完成天数**: `4 / 35`
+- **总体完成度**: `11%`
 
 ```
-[███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 9%
+[█████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 11%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **目标**: 准备启动 **Day 4: 增强块组件 (Code / Quote / Callout)**
-- **状态**：Day 3 列表与待办块已全面交付并通过 Vitest 与脚本双重自动化验收；Day 4 待开始。
-- **今日交付边界**：Day 3 范围聚焦无序列表、动态有序列表、待办块、Tab 缩进与降级嵌套；未越界开发 Slash 菜单或拖拽重排。
-- **完成标准**：Day 3 新增 7 个真实组件用例（累计 18/18 全绿），`verify:day3` 脚本全绿，`verify:day2` 回归通过，`npm run build` 零错误。
+- **状态**: **Day 4: 增强块组件 (Code / Quote / Callout)** 已圆满交付并通过全量验收！
+- **成果**：CodeBlock（多语言/折行/复制/Tab 缩进/React-safe Prism 语法树渲染）、QuoteBlock（语义化左框/斜体/拆分/退出）、CalloutBlock（12 款 Emoji 弹窗/5 色基调/拆分/退出）形成完整闭环；容器隔离防护杜绝文本误并入代码；测试套件扩充至 32 项（全绿），`verify:day4`、`verify:day3`、`verify:day2` 与生产构建全通过。
+- **明日聚焦**：准备启动 **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)**。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -284,6 +301,58 @@ flowchart LR
 - [x] Tab 键执行单级缩进，严格校验同家族前置块并禁止跳级；Shift+Tab 逐级缩退至根级。
 - [x] 列表内多行文本粘贴拆分为同类同级块，块类型转换不丢失文本与 ID。
 - [x] 自动化测试套件 `npm test`、`npm run verify:day2`、`npm run verify:day3` 及 `npm run build` 零报错全部通过。
+
+### Day 3 修复复核（2026-09-13）
+
+- **P1 历史栈修复已确认**：`BlockEditor` 使用 `prevDocIdRef` 将父组件的 `initialBlocks` 引用更新与历史生命周期解耦；真实挂载 `DocumentPage` 的用例覆盖列表拆分、缩进、Todo 勾选、多行粘贴后的 Undo/Redo，以及跨文档历史隔离。
+- **P2 属性清理已确认**：`cleanNonListProperties` 会在列表转 Paragraph/H1-H3、空列表退出及块首降级时移除 `level` / `checked`；非列表重新进入列表时从 `level: 0` 初始化。
+- **P2 规范化已确认**：`normalizeLevel`、`normalizeChecked`、`normalizeBlock` 已由渲染层、编辑器和 Store 共享；字符串、小数、负数、`NaN`、`Infinity` 与非布尔 checked 均有测试覆盖。
+- **本次实测**：`npm test` 对应的 25/25 用例通过；`npm run verify:day3`、`npm run verify:day2` 均通过；`npm run build` 成功完成 1863 个模块转换。首次受限运行出现 Vitest 缓存 `EPERM`，在正常写入权限下重跑通过，不记为产品缺陷。
+- **复核结论**：上次列出的 Day 3 阻断项均已闭环，Day 3 保持完成状态。当前根级列表仍会把前一非 Divider 块视为可合并文本块；Day 4 引入 Code / Quote / Callout 时，必须同步明确各增强块的 Backspace 合并边界，避免将列表文本误并入不兼容块。
+
+### Day 4 今日实施计划（2026-09-13）
+
+#### 交付原则与技术决策
+
+- **继续沿用轻量块树**：不更换编辑器内核；Code、Quote、Callout 继续使用 `BlockNode`，保证后续 Yjs 映射稳定。
+- **高亮安全优先**：优先采用输出 React token 的轻量方案（建议评估 `prism-react-renderer`），不直接注入未经约束的 HTML；只按需加载常用语言，控制包体积。
+- **行为先定义后编码**：先固化属性默认值、转换清理、Enter/Backspace/Tab 行为，再实现 UI，避免三种新块各自形成不一致的键盘规则。
+
+### Day 4 实施与交付记录（2026-09-13）
+
+#### 阶段 A：数据契约与公共工具
+- [x] 在 `blockUtils.ts` 定义并测试 Code 属性：`language` 缺省为 `plaintext`，`wrap` 缺省为 `false`；未知语言回退 `plaintext`。
+- [x] 定义并测试 Callout 属性：`icon` 缺省为 `💡`，`tone` 限定为 `neutral | info | success | warning | danger`，非法值回退 `neutral`。
+- [x] 扩展 `normalizeBlock` 与类型转换规则：进入增强块初始化其专属属性，离开时清理专属属性，始终保留块 `id`、正文及不冲突的通用属性。
+- [x] 明确可合并文本块白名单 `TEXT_MERGEABLE_BLOCK_TYPES` (`paragraph`, `heading1-3`, `bulletList`, `numberedList`, `todo`, `quote`)，补齐 Paragraph/List 与 Code、Quote、Callout 相邻时的 Backspace 容器隔离行为。
+
+#### 阶段 B：组件与视觉实现
+- [x] 新建 `CodeBlock.tsx`：多行编辑区、语言选择器、纯 React Token 语法树高亮层、一键复制、复制成功/失败状态、折行切换与水平滚动同步；提供明确的按钮标签和键盘焦点样式。
+- [x] 新建 `QuoteBlock.tsx`：语义化引用容器、左侧引用线 (`border-l-4 border-blue-500`)、亮暗主题与斜体排版样式，复用公共文本编辑能力。
+- [x] 新建 `CalloutBlock.tsx`：Emoji/Icon 12 预选 Popover、五种 tone 色彩基调选择，并完整替换 `BlockItem.tsx` 中原有的静态 Callout 占位分支。
+- [x] 扩展 `BlockTypeSelector.tsx` 与悬浮操作条图标，使 Code / Quote / Callout 可从现有菜单创建和互相转换。
+
+#### 阶段 C：键盘与编辑闭环
+- [x] Code 内 Enter 保留为代码换行，Tab/Shift+Tab 执行 2 空格选区缩进/缩退；`Ctrl/Cmd+Enter` 在下方创建 Paragraph 并跳转；空 Code 块首 Backspace 转为 Paragraph。
+- [x] Quote / Callout 在内容中间 Enter 拆分、空块 Enter 退出到 Paragraph；空块首 Backspace 降级为 Paragraph；中文 IME 合成期间不得误触拆分或退出。
+- [x] Copy 必须复制原始 `content` 而非高亮后的展示文本；剪贴板失败时具备降级保护，且不产生破坏性历史副作用。
+- [x] 所有结构变化、语言/tone/icon/wrap 修改均接入现有历史栈，并在真实 `DocumentPage` 链路验证 Undo/Redo。
+
+#### 阶段 D：测试、回归与收尾
+- [x] 新增 `scripts/verify-day4.mjs` 与 npm 脚本 `verify:day4`，直接导入生产规范化工具；覆盖默认值、非法值、属性清洗与类型转换。
+- [x] 组件测试覆盖三类块渲染、语言/tone/icon 切换、精确复制、多行代码、Tab 缩进、Enter/Backspace 边界、IME、主题及窄屏。
+- [x] 添加包含 `<script>`、HTML 标签和特殊字符的代码高亮用例，确认仅作为纯文本/Token 渲染，杜绝任何 DOM 注入与 XSS 风险。
+- [x] 添加 `DocumentPage` 集成用例，验证增强块的创建、转换与属性修改经过 Store 回传后仍可 Undo/Redo，切页不串写。
+- [x] 依次执行 `npm test`（32/32 全通过）、`npm run verify:day2`（通过）、`npm run verify:day3`（通过）、`npm run verify:day4`（通过）、`npm run build`（零报错打包成功）。
+
+#### Day 4 验收清单（已完成逐项核查）
+
+- [x] Code 支持至少 `plaintext`、JavaScript/TypeScript、JSON、HTML/CSS、Shell、Python 等 14 种主流语言，并对未知语言安全回退。
+- [x] 多行编辑、代码 2 空格缩进/缩退、复制、折行和退出操作无内容丢失，长代码在窄屏不撑破页面。
+- [x] Quote 与 Callout 可编辑、可退出、可转换；Callout 的 Icon 与五种 tone 可选且亮暗主题清晰易读。
+- [x] 三类增强块与 Paragraph/H1-H3/List/Todo 相邻时，Enter/Backspace 和 Undo/Redo 行为符合既定容器隔离边界。
+- [x] 高亮渲染无 DOM 注入风险，按钮具备可访问名称 (`aria-label`)、键盘焦点和必要的状态提示。
+- [x] Day 2、Day 3 全量回归与生产构建通过；Day 5 的 Slash/Bubble Menu 和 Day 6 拖拽未混入本日交付。
 
 ---
 

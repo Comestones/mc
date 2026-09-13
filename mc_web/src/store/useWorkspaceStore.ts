@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DocumentItem, BreadcrumbItem, BlockNode } from '../types/document';
 import { WorkspaceMeta } from '../types/workspace';
+import { normalizeBlock } from '../utils/blockUtils';
 
 interface WorkspaceState {
   // 工作区信息
@@ -226,7 +227,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             ...state.documents,
             [id]: {
               ...existing,
-              blocks,
+              blocks: blocks.map(normalizeBlock),
               updatedAt: Date.now(),
             }
           }

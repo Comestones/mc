@@ -2,56 +2,22 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BlockNode, BlockType } from '../../types/document';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { BlockItem } from './BlockItem';
+import {
+  generateBlockId,
+  createDefaultParagraph,
+  isListType,
+  getBlockLevel,
+  getNumberedListOrder,
+  cleanNonListProperties,
+  cleanBlockProperties,
+  normalizeBlock,
+  normalizeChecked,
+  isTextMergeable,
+} from '../../utils/blockUtils';
 
 interface BlockEditorProps {
   documentId: string;
   initialBlocks?: BlockNode[];
-}
-
-function generateBlockId(): string {
-  return `b-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-}
-
-function createDefaultParagraph(id?: string, content = ''): BlockNode {
-  return {
-    id: id || generateBlockId(),
-    type: 'paragraph',
-    content,
-  };
-}
-
-function isListType(type: BlockType): boolean {
-  return type === 'bulletList' || type === 'numberedList' || type === 'todo';
-}
-
-function getBlockLevel(block: BlockNode): number {
-  const lvl = block.properties?.level;
-  if (typeof lvl === 'number' && Number.isFinite(lvl) && lvl >= 0) {
-    return Math.floor(lvl);
-  }
-  return 0;
-}
-
-function getNumberedListOrder(blocks: BlockNode[], index: number): number {
-  const current = blocks[index];
-  if (!current || current.type !== 'numberedList') return 1;
-
-  const currentLevel = getBlockLevel(current);
-  let count = 1;
-
-  for (let i = index - 1; i >= 0; i--) {
-    const prev = blocks[i];
-    if (prev.type !== 'numberedList') break;
-
-    const prevLevel = getBlockLevel(prev);
-    if (prevLevel < currentLevel) break;
-
-    if (prevLevel === currentLevel) {
-      count++;
-    }
-  }
-
-  return count;
 }
 
 export const BlockEditor: React.FC<BlockEditorProps> = ({
@@ -62,10 +28,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     (state) => state.updateDocumentBlocks
   );
 
-  // 确保文档至少有一个可编辑块
+  // 确保文档至少有一个可编辑块，并执行统一数据归一化
   const getInitialBlocks = useCallback((): BlockNode[] => {
     if (initialBlocks && initialBlocks.length > 0) {
-      return initialBlocks;
+      return initialBlocks.map(normalizeBlock);
     }
     return [createDefaultParagraph()];
   }, [initialBlocks]);
@@ -77,12 +43,21 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const [cursorFocus, setCursorFocus] = useState<{
     blockId: string;
     offset: number | 'start' | 'end';
-  } | null>(null);
+  } | null>(() => {
+    const init = getInitialBlocks();
+    if (init.length === 1 && init[0].type === 'paragraph' && !init[0].content) {
+      return { blockId: init[0].id, offset: 0 };
+    }
+    return null;
+  });
 
   // 撤销/重做历史栈
   const historyRef = useRef<BlockNode[][]>([getInitialBlocks()]);
   const historyIndexRef = useRef(0);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 记录上次激活的 documentId，确保仅在切页时重置历史，避免因父组件 Zustand 响应式重渲染引发历史清空 (P1)
+  const prevDocIdRef = useRef(documentId);
 
   // 记录历史快照
   const pushHistory = useCallback((newBlocks: BlockNode[]) => {
@@ -103,7 +78,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       }
     ) => {
       const safeBlocks =
-        newBlocks.length === 0 ? [createDefaultParagraph()] : newBlocks;
+        newBlocks.length === 0
+          ? [createDefaultParagraph()]
+          : newBlocks.map(normalizeBlock);
       blocksRef.current = safeBlocks;
       setBlocks(safeBlocks);
       updateDocumentBlocks(documentId, safeBlocks);
@@ -131,37 +108,55 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     [documentId, updateDocumentBlocks, pushHistory]
   );
 
-  // 当 documentId 变化时重置，并在卸载或切页时坚决清理定时器
+  // 组件卸载时严格清理未完成定时器
   useEffect(() => {
-    if (typingTimerRef.current) {
-      clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = null;
-    }
-
-    const freshBlocks = getInitialBlocks();
-    blocksRef.current = freshBlocks;
-    setBlocks(freshBlocks);
-    historyRef.current = [freshBlocks];
-    historyIndexRef.current = 0;
-
-    // 如果是唯一一个空段落的新页面，自动聚焦光标
-    if (
-      freshBlocks.length === 1 &&
-      freshBlocks[0].type === 'paragraph' &&
-      !freshBlocks[0].content
-    ) {
-      setCursorFocus({ blockId: freshBlocks[0].id, offset: 0 });
-    } else {
-      setCursorFocus(null);
-    }
-
     return () => {
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);
         typingTimerRef.current = null;
       }
     };
+  }, []);
+
+  // 仅当 documentId 真实发生切换时重置历史与内部状态（例如通过切换页面）
+  useEffect(() => {
+    if (prevDocIdRef.current !== documentId) {
+      prevDocIdRef.current = documentId;
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+
+      const freshBlocks = getInitialBlocks();
+      blocksRef.current = freshBlocks;
+      setBlocks(freshBlocks);
+      historyRef.current = [freshBlocks];
+      historyIndexRef.current = 0;
+
+      // 如果是唯一一个空段落的新页面，自动聚焦光标
+      if (
+        freshBlocks.length === 1 &&
+        freshBlocks[0].type === 'paragraph' &&
+        !freshBlocks[0].content
+      ) {
+        setCursorFocus({ blockId: freshBlocks[0].id, offset: 0 });
+      } else {
+        setCursorFocus(null);
+      }
+    }
   }, [documentId, getInitialBlocks]);
+
+  // 当初始传入的数据存在未规整属性时（如负数、小数、非法 checked），自动完成规整并同步至 Store
+  useEffect(() => {
+    const fresh = getInitialBlocks();
+    const needsNormalize = initialBlocks?.some((b, i) => {
+      const norm = fresh[i];
+      return !norm || JSON.stringify(b) !== JSON.stringify(norm);
+    });
+    if (needsNormalize) {
+      updateDocumentBlocks(documentId, fresh);
+    }
+  }, [documentId, getInitialBlocks, initialBlocks, updateDocumentBlocks]);
 
   // 撤销 (Undo)
   const handleUndo = useCallback(() => {
@@ -207,6 +202,23 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     [commitBlocks]
   );
 
+  // 更新块的属性 (如 code.language, code.wrap, callout.tone, callout.icon 等)
+  const handleUpdateProperties = useCallback(
+    (index: number, properties: Record<string, any>) => {
+      const current = blocksRef.current;
+      const cur = current[index];
+      if (!cur) return;
+
+      const next = [...current];
+      next[index] = {
+        ...cur,
+        properties: cleanBlockProperties(cur.type, properties) || properties,
+      };
+      commitBlocks(next, { recordHistoryNow: true });
+    },
+    [commitBlocks]
+  );
+
   // 切换块类型
   const handleChangeType = useCallback(
     (index: number, newType: BlockType) => {
@@ -226,25 +238,53 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           focus = { blockId: extra.id, offset: 0 };
         }
       } else if (isListType(newType)) {
-        const level = getBlockLevel(cur);
-        const checked = newType === 'todo' ? (cur.properties?.checked ?? false) : undefined;
+        const isPrevList = isListType(cur.type);
+        const level = isPrevList ? getBlockLevel(cur) : 0;
+        const newProperties: Record<string, any> = cleanBlockProperties(newType, cur.properties) || {};
+        newProperties.level = level;
+        if (newType === 'todo') {
+          newProperties.checked = normalizeChecked(cur.properties?.checked);
+        } else {
+          delete newProperties.checked;
+        }
+
         next[index] = {
           ...cur,
           type: newType,
           content: cur.type === 'divider' ? '' : cur.content,
-          properties: {
-            ...cur.properties,
-            level,
-            ...(newType === 'todo' ? { checked } : {}),
+          properties: newProperties,
+        };
+        focus = { blockId: cur.id, offset: 'end' };
+      } else if (newType === 'code') {
+        next[index] = {
+          ...cur,
+          type: 'code',
+          content: cur.type === 'divider' ? '' : cur.content,
+          properties: cleanBlockProperties('code', cur.properties) || {
+            language: 'javascript',
+            wrap: false,
+          },
+        };
+        focus = { blockId: cur.id, offset: 'end' };
+      } else if (newType === 'callout') {
+        next[index] = {
+          ...cur,
+          type: 'callout',
+          content: cur.type === 'divider' ? '' : cur.content,
+          properties: cleanBlockProperties('callout', cur.properties) || {
+            icon: '💡',
+            tone: 'neutral',
           },
         };
         focus = { blockId: cur.id, offset: 'end' };
       } else {
+        // 非列表/代码/提示块类型 (paragraph, heading1/2/3, quote 等) 彻底剥除专属属性
+        const cleanedProperties = cleanBlockProperties(newType, cur.properties);
         next[index] = {
           ...cur,
           type: newType,
           content: cur.type === 'divider' ? '' : cur.content,
-          properties: cur.properties ? { ...cur.properties, checked: undefined } : undefined,
+          properties: cleanedProperties,
         };
         focus = { blockId: cur.id, offset: 'end' };
       }
@@ -287,7 +327,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           next[index] = {
             ...cur,
             type: 'paragraph',
-            properties: undefined,
+            properties: cleanNonListProperties(cur.properties),
           };
           commitBlocks(next, {
             recordHistoryNow: true,
@@ -341,6 +381,109 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         return;
       }
 
+      // 引用块 (quote) 回车拆分或退出
+      if (cur.type === 'quote') {
+        if (cur.content.trim() === '') {
+          // 空引用块按回车：降级退出为普通段落
+          next[index] = {
+            ...cur,
+            type: 'paragraph',
+            properties: cleanBlockProperties('paragraph', cur.properties),
+          };
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        if (offset === 0 && cur.content.length > 0) {
+          const emptyBlock: BlockNode = {
+            id: generateBlockId(),
+            type: 'quote',
+            content: '',
+          };
+          next.splice(index, 0, emptyBlock);
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        const leftContent = cur.content.slice(0, offset);
+        const rightContent = cur.content.slice(offset);
+        const newBlock: BlockNode = {
+          id: generateBlockId(),
+          type: 'quote',
+          content: rightContent,
+        };
+        next[index] = { ...cur, content: leftContent };
+        next.splice(index + 1, 0, newBlock);
+        commitBlocks(next, {
+          recordHistoryNow: true,
+          focus: { blockId: newBlock.id, offset: 0 },
+        });
+        return;
+      }
+
+      // 提示块 (callout) 回车拆分或退出
+      if (cur.type === 'callout') {
+        if (cur.content.trim() === '') {
+          // 空提示块按回车：降级退出为普通段落
+          next[index] = {
+            ...cur,
+            type: 'paragraph',
+            properties: cleanBlockProperties('paragraph', cur.properties),
+          };
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        const tone = cur.properties?.tone;
+        const icon = cur.properties?.icon;
+
+        if (offset === 0 && cur.content.length > 0) {
+          const emptyBlock: BlockNode = {
+            id: generateBlockId(),
+            type: 'callout',
+            content: '',
+            properties: {
+              ...(icon ? { icon } : {}),
+              ...(tone ? { tone } : {}),
+            },
+          };
+          next.splice(index, 0, emptyBlock);
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        const leftContent = cur.content.slice(0, offset);
+        const rightContent = cur.content.slice(offset);
+        const newBlock: BlockNode = {
+          id: generateBlockId(),
+          type: 'callout',
+          content: rightContent,
+          properties: {
+            ...(icon ? { icon } : {}),
+            ...(tone ? { tone } : {}),
+          },
+        };
+        next[index] = { ...cur, content: leftContent };
+        next.splice(index + 1, 0, newBlock);
+        commitBlocks(next, {
+          recordHistoryNow: true,
+          focus: { blockId: newBlock.id, offset: 0 },
+        });
+        return;
+      }
+
       // 普通段落与标题拆分
       if (offset === 0 && cur.content.length > 0) {
         const emptyBlock = createDefaultParagraph();
@@ -377,6 +520,88 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
       const next = [...current];
 
+      // 代码块 (code) 退格处理：空代码块降级为普通段落
+      if (cur.type === 'code') {
+        if (cur.content.length === 0) {
+          next[index] = {
+            ...cur,
+            type: 'paragraph',
+            properties: cleanBlockProperties('paragraph', cur.properties),
+          };
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+        }
+        return;
+      }
+
+      // 提示块 (callout) 退格处理：空提示块降级为普通段落；非空块首退格不合入上一块，仅将光标移至上一块末尾
+      if (cur.type === 'callout') {
+        if (cur.content.length === 0) {
+          next[index] = {
+            ...cur,
+            type: 'paragraph',
+            properties: cleanBlockProperties('paragraph', cur.properties),
+          };
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+        if (index > 0 && next[index - 1]) {
+          setCursorFocus({ blockId: next[index - 1].id, offset: 'end' });
+        }
+        return;
+      }
+
+      // 引用块 (quote) 退格处理：空引用或首块降级为普通段落；非空向可合并文本前项合并
+      if (cur.type === 'quote') {
+        if (cur.content.length === 0 || index === 0) {
+          next[index] = {
+            ...cur,
+            type: 'paragraph',
+            properties: cleanBlockProperties('paragraph', cur.properties),
+          };
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        const prevBlock = next[index - 1];
+        if (!prevBlock) return;
+
+        if (prevBlock.type === 'divider') {
+          next.splice(index - 1, 1);
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: cur.id, offset: 0 },
+          });
+          return;
+        }
+
+        if (!isTextMergeable(prevBlock.type)) {
+          setCursorFocus({ blockId: prevBlock.id, offset: 'end' });
+          return;
+        }
+
+        const joinOffset = prevBlock.content.length;
+        const mergedContent = prevBlock.content + cur.content;
+        next[index - 1] = {
+          ...prevBlock,
+          content: mergedContent,
+        };
+        next.splice(index, 1);
+        commitBlocks(next, {
+          recordHistoryNow: true,
+          focus: { blockId: prevBlock.id, offset: joinOffset },
+        });
+        return;
+      }
+
       // 列表类块首退格处理
       if (isListType(cur.type)) {
         const curLevel = getBlockLevel(cur);
@@ -399,7 +624,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           next[index] = {
             ...cur,
             type: 'paragraph',
-            properties: undefined,
+            properties: cleanNonListProperties(cur.properties),
           };
           commitBlocks(next, {
             recordHistoryNow: true,
@@ -418,6 +643,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             recordHistoryNow: true,
             focus: { blockId: cur.id, offset: 0 },
           });
+          return;
+        }
+
+        if (!isTextMergeable(prevBlock.type)) {
+          setCursorFocus({ blockId: prevBlock.id, offset: 'end' });
           return;
         }
 
@@ -444,7 +674,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         cur.type === 'heading2' ||
         cur.type === 'heading3'
       ) {
-        next[index] = { ...cur, type: 'paragraph' };
+        next[index] = {
+          ...cur,
+          type: 'paragraph',
+          properties: cleanNonListProperties(cur.properties),
+        };
         commitBlocks(next, {
           recordHistoryNow: true,
           focus: { blockId: cur.id, offset: 0 },
@@ -467,6 +701,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           recordHistoryNow: true,
           focus: { blockId: cur.id, offset: 0 },
         });
+        return;
+      }
+
+      // 如果上一块非可合并文本块（例如代码块、提示块等独立容器），严格保持容器边界，不合入内容，仅转移光标
+      if (!isTextMergeable(prevBlock.type)) {
+        setCursorFocus({ blockId: prevBlock.id, offset: 'end' });
         return;
       }
 
@@ -755,8 +995,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               : undefined
           }
           cursorFocus={cursorFocus?.blockId === block.id ? cursorFocus : null}
+          onClearCursorFocus={() => setCursorFocus(null)}
           onChangeContent={(content) => handleChangeContent(idx, content)}
           onChangeType={(newType) => handleChangeType(idx, newType)}
+          onUpdateProperties={(props) => handleUpdateProperties(idx, props)}
           onSplit={(offset) => handleSplit(idx, offset)}
           onMergeUp={() => handleMergeUp(idx)}
           onIndent={() => handleIndent(idx)}
@@ -765,7 +1007,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onFocusNext={() => handleFocusNext(idx)}
           onPaste={(text, offset) => handlePaste(idx, text, offset)}
           onDelete={() => handleDeleteBlock(idx)}
-          onInsertBelow={() => handleInsertBelow(idx)}
+          onInsertBelow={(type?: BlockType) => handleInsertBelow(idx, type)}
           onToggleTodo={() => handleToggleTodo(idx)}
           onUndo={handleUndo}
           onRedo={handleRedo}

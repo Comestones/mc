@@ -11,12 +11,19 @@ import {
   Minus,
   List,
   ListOrdered,
+  Code,
+  Quote,
+  Lightbulb,
 } from 'lucide-react';
 import { BlockNode, BlockType } from '../../types/document';
 import { TextBlock } from './TextBlock';
 import { DividerBlock } from './DividerBlock';
 import { BlockTypeSelector } from './BlockTypeSelector';
+import { CodeBlock } from './CodeBlock';
+import { QuoteBlock } from './QuoteBlock';
+import { CalloutBlock } from './CalloutBlock';
 import { cn } from '../../utils/cn';
+import { normalizeLevel, normalizeChecked } from '../../utils/blockUtils';
 
 interface BlockItemProps {
   block: BlockNode;
@@ -27,6 +34,7 @@ interface BlockItemProps {
   onClearCursorFocus?: () => void;
   onChangeContent: (content: string) => void;
   onChangeType: (type: BlockType) => void;
+  onUpdateProperties?: (properties: Record<string, any>) => void;
   onSplit: (offset: number) => void;
   onMergeUp: () => void;
   onIndent?: () => void;
@@ -35,7 +43,7 @@ interface BlockItemProps {
   onFocusNext?: () => void;
   onPaste: (text: string, offset: number) => void;
   onDelete: () => void;
-  onInsertBelow: () => void;
+  onInsertBelow: (type?: BlockType) => void;
   onToggleTodo?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -50,6 +58,7 @@ export const BlockItem: React.FC<BlockItemProps> = ({
   onClearCursorFocus,
   onChangeContent,
   onChangeType,
+  onUpdateProperties,
   onSplit,
   onMergeUp,
   onIndent,
@@ -66,7 +75,7 @@ export const BlockItem: React.FC<BlockItemProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
-  const level = Math.max(0, Number(block.properties?.level) || 0);
+  const level = normalizeLevel(block.properties?.level);
   const indentStyle = level > 0 ? { paddingLeft: `${level * 24}px` } : undefined;
 
   const getTypeIcon = () => {
@@ -85,6 +94,12 @@ export const BlockItem: React.FC<BlockItemProps> = ({
         return <ListOrdered className="w-3.5 h-3.5" />;
       case 'todo':
         return <CheckSquare className="w-3.5 h-3.5" />;
+      case 'code':
+        return <Code className="w-3.5 h-3.5" />;
+      case 'quote':
+        return <Quote className="w-3.5 h-3.5" />;
+      case 'callout':
+        return <Lightbulb className="w-3.5 h-3.5" />;
       default:
         return <Pilcrow className="w-3.5 h-3.5" />;
     }
@@ -192,7 +207,7 @@ export const BlockItem: React.FC<BlockItemProps> = ({
         );
 
       case 'todo':
-        const isChecked = !!block.properties?.checked;
+        const isChecked = normalizeChecked(block.properties?.checked);
         return (
           <div
             style={indentStyle}
@@ -201,10 +216,16 @@ export const BlockItem: React.FC<BlockItemProps> = ({
             <button
               type="button"
               onClick={onToggleTodo}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  onToggleTodo?.();
+                }
+              }}
               role="checkbox"
               aria-checked={isChecked}
               aria-label={isChecked ? '标记为未完成' : '标记为已完成'}
-              className="mt-1 text-text-muted-light dark:text-text-muted-dark hover:text-blue-500 transition-colors flex-shrink-0"
+              className="mt-1 text-text-muted-light dark:text-text-muted-dark hover:text-blue-500 transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
             >
               {isChecked ? (
                 <CheckSquare className="w-4 h-4 text-blue-500 fill-blue-500/20" />
@@ -240,32 +261,73 @@ export const BlockItem: React.FC<BlockItemProps> = ({
           </div>
         );
 
+      case 'code':
+        return (
+          <CodeBlock
+            id={block.id}
+            content={block.content}
+            language={block.properties?.language}
+            wrap={block.properties?.wrap}
+            cursorFocus={cursorFocus}
+            onClearCursorFocus={onClearCursorFocus}
+            onChange={onChangeContent}
+            onChangeLanguage={(language) =>
+              onUpdateProperties?.({ ...block.properties, language })
+            }
+            onChangeWrap={(wrap) =>
+              onUpdateProperties?.({ ...block.properties, wrap })
+            }
+            onInsertBelow={onInsertBelow}
+            onMergeUp={onMergeUp}
+            onFocusPrevious={onFocusPrevious}
+            onFocusNext={onFocusNext}
+            onUndo={onUndo}
+            onRedo={onRedo}
+          />
+        );
+
+      case 'quote':
+        return (
+          <QuoteBlock
+            id={block.id}
+            content={block.content}
+            cursorFocus={cursorFocus}
+            onClearCursorFocus={onClearCursorFocus}
+            onChange={onChangeContent}
+            onSplit={onSplit}
+            onMergeUp={onMergeUp}
+            onFocusPrevious={onFocusPrevious}
+            onFocusNext={onFocusNext}
+            onPaste={onPaste}
+            onUndo={onUndo}
+            onRedo={onRedo}
+          />
+        );
+
       case 'callout':
         return (
-          <div className="p-3.5 rounded-xl bg-sidebar-light dark:bg-sidebar-dark border border-border-light dark:border-border-dark flex items-start gap-3 my-2">
-            <span className="text-lg select-none">
-              {block.properties?.icon || '💡'}
-            </span>
-            <div className="flex-1 min-w-0">
-              <TextBlock
-                id={block.id}
-                type="paragraph"
-                content={block.content}
-                cursorFocus={cursorFocus}
-                onClearCursorFocus={onClearCursorFocus}
-                onChange={onChangeContent}
-                onSplit={onSplit}
-                onMergeUp={onMergeUp}
-                onIndent={onIndent}
-                onOutdent={onOutdent}
-                onFocusPrevious={onFocusPrevious}
-                onFocusNext={onFocusNext}
-                onPaste={onPaste}
-                onUndo={onUndo}
-                onRedo={onRedo}
-              />
-            </div>
-          </div>
+          <CalloutBlock
+            id={block.id}
+            content={block.content}
+            icon={block.properties?.icon}
+            tone={block.properties?.tone}
+            cursorFocus={cursorFocus}
+            onClearCursorFocus={onClearCursorFocus}
+            onChange={onChangeContent}
+            onChangeIcon={(icon) =>
+              onUpdateProperties?.({ ...block.properties, icon })
+            }
+            onChangeTone={(tone) =>
+              onUpdateProperties?.({ ...block.properties, tone })
+            }
+            onSplit={onSplit}
+            onMergeUp={onMergeUp}
+            onFocusPrevious={onFocusPrevious}
+            onFocusNext={onFocusNext}
+            onPaste={onPaste}
+            onUndo={onUndo}
+            onRedo={onRedo}
+          />
         );
 
       default:
@@ -301,14 +363,14 @@ export const BlockItem: React.FC<BlockItemProps> = ({
     <div
       data-block-wrapper-id={block.id}
       data-block-index={index}
-      className="group/block relative flex items-start -ml-12 pl-12 transition-colors rounded-lg"
+      className="group/block relative flex items-start -ml-8 pl-8 sm:-ml-12 sm:pl-12 transition-colors rounded-lg"
     >
       {/* 悬浮操作把手（Hover Action Bar） */}
       <div className="absolute left-1 top-1 opacity-0 group-hover/block:opacity-100 flex items-center gap-0.5 transition-opacity select-none z-10">
         {/* 快速在下方新增段落 */}
         <button
           type="button"
-          onClick={onInsertBelow}
+          onClick={() => onInsertBelow()}
           title="在下方插入新块"
           className="p-1 rounded text-text-muted-light hover:text-text-primary-light dark:text-text-muted-dark dark:hover:text-text-primary-dark hover:bg-sidebar-hover-light dark:hover:bg-sidebar-hover-dark transition-colors"
         >

@@ -10,6 +10,9 @@ import {
   List,
   ListOrdered,
   CheckSquare,
+  Code,
+  Quote,
+  Lightbulb,
 } from 'lucide-react';
 import { BlockType } from '../../types/document';
 import { cn } from '../../utils/cn';
@@ -71,6 +74,24 @@ const TYPE_OPTIONS: TypeOption[] = [
     label: '待办清单',
     description: '带复选框的任务清单项',
     icon: <CheckSquare className="w-4 h-4" />,
+  },
+  {
+    type: 'code',
+    label: '代码块',
+    description: '语法高亮代码与一键复制',
+    icon: <Code className="w-4 h-4" />,
+  },
+  {
+    type: 'quote',
+    label: '引用块',
+    description: '左侧引用竖线与斜体文本',
+    icon: <Quote className="w-4 h-4" />,
+  },
+  {
+    type: 'callout',
+    label: '提示块',
+    description: '多彩背景与 Emoji 强调提示',
+    icon: <Lightbulb className="w-4 h-4" />,
   },
   {
     type: 'divider',
