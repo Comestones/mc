@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BlockNode, BlockType } from '../../types/document';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { BlockItem } from './BlockItem';
+import { SlashCommandMenu } from './SlashCommandMenu';
+import { BubbleMenu, FormatStates } from './BubbleMenu';
+import {
+  SlashCommandItem,
+  filterSlashCommands,
+  stripSlashCommand,
+} from '../../utils/slashCommandUtils';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 import {
   generateBlockId,
   createDefaultParagraph,
@@ -647,6 +655,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         }
 
         if (!isTextMergeable(prevBlock.type)) {
+          if (cur.content.length === 0) {
+            next[index] = {
+              ...cur,
+              type: 'paragraph',
+              properties: cleanNonListProperties(cur.properties),
+            };
+            commitBlocks(next, {
+              recordHistoryNow: true,
+              focus: { blockId: cur.id, offset: 0 },
+            });
+            return;
+          }
           setCursorFocus({ blockId: prevBlock.id, offset: 'end' });
           return;
         }
@@ -704,8 +724,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         return;
       }
 
-      // 如果上一块非可合并文本块（例如代码块、提示块等独立容器），严格保持容器边界，不合入内容，仅转移光标
+      // 如果上一块非可合并文本块（例如代码块、提示块等独立容器），严格保持容器边界：
+      // 若当前块为空，则删除多余空白块并转移焦点至上一块末尾；若非空，严格禁止文本合入容器，仅安全转移光标
       if (!isTextMergeable(prevBlock.type)) {
+        if (cur.content.length === 0) {
+          next.splice(index, 1);
+          commitBlocks(next, {
+            recordHistoryNow: true,
+            focus: { blockId: prevBlock.id, offset: 'end' },
+          });
+          return;
+        }
         setCursorFocus({ blockId: prevBlock.id, offset: 'end' });
         return;
       }
@@ -955,6 +984,334 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     []
   );
 
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Day 5: Slash Command (/) 状态与键盘流转
+  const [slashMenuState, setSlashMenuState] = useState<{
+    isOpen: boolean;
+    blockIndex: number;
+    slashIndex: number;
+    query: string;
+    position: { top: number; left: number };
+  }>({
+    isOpen: false,
+    blockIndex: -1,
+    slashIndex: -1,
+    query: '',
+    position: { top: 0, left: 0 },
+  });
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+
+  const handleSlashTrigger = useCallback(
+    (index: number, query: string, position: { top: number; left: number }, slashIndex: number) => {
+      setSlashMenuState({
+        isOpen: true,
+        blockIndex: index,
+        slashIndex,
+        query,
+        position,
+      });
+      setSlashSelectedIndex(0);
+    },
+    []
+  );
+
+  const handleSlashClose = useCallback(() => {
+    setSlashMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+  }, []);
+
+  const handleSelectSlashCommand = useCallback(
+    (item: SlashCommandItem) => {
+      const { blockIndex, slashIndex, query } = slashMenuState;
+      if (blockIndex < 0 || blockIndex >= blocksRef.current.length) {
+        setSlashMenuState((prev) => ({ ...prev, isOpen: false }));
+        return;
+      }
+
+      const curBlock = blocksRef.current[blockIndex];
+      // 清除正文中的 `/<query>`
+      const cleanedContent = stripSlashCommand(curBlock.content, slashIndex, query.length);
+
+      const next = [...blocksRef.current];
+      const newProperties = cleanBlockProperties(item.type, curBlock.properties) || {};
+      next[blockIndex] = {
+        ...curBlock,
+        type: item.type,
+        content: cleanedContent,
+        properties: newProperties,
+      };
+
+      commitBlocks(next, {
+        recordHistoryNow: true,
+        focus: { blockId: curBlock.id, offset: cleanedContent.length },
+      });
+
+      setSlashMenuState((prev) => ({ ...prev, isOpen: false }));
+    },
+    [slashMenuState, commitBlocks]
+  );
+
+  const handleSlashKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!slashMenuState.isOpen) return false;
+
+      const filtered = filterSlashCommands(slashMenuState.query);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashSelectedIndex((prev) => (prev + 1) % Math.max(1, filtered.length));
+        return true;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashSelectedIndex((prev) => (prev - 1 + filtered.length) % Math.max(1, filtered.length));
+        return true;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (filtered[slashSelectedIndex]) {
+          handleSelectSlashCommand(filtered[slashSelectedIndex]);
+        }
+        return true;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashMenuState((prev) => ({ ...prev, isOpen: false }));
+        return true;
+      }
+
+      return false;
+    },
+    [slashMenuState, slashSelectedIndex, handleSelectSlashCommand]
+  );
+
+  // Day 5: 选中文字浮动菜单 (Bubble Menu) 状态与处理器
+  const [bubbleMenuState, setBubbleMenuState] = useState<{
+    isOpen: boolean;
+    blockId: string;
+    position: { top: number; left: number };
+    formats: FormatStates;
+  }>({
+    isOpen: false,
+    blockId: '',
+    position: { top: 0, left: 0 },
+    formats: {
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      code: false,
+      link: false,
+    },
+  });
+
+  const updateBubbleMenu = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      return;
+    }
+
+    const selectedText = sel.toString().trim();
+    if (!selectedText) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    const editorContainer = editorContainerRef.current;
+    if (!editorContainer || !editorContainer.contains(range.commonAncestorContainer)) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      return;
+    }
+
+    const node = range.commonAncestorContainer;
+    const blockEl = (
+      node.nodeType === Node.ELEMENT_NODE
+        ? (node as HTMLElement)
+        : node.parentElement
+    )?.closest('[data-block-id]') as HTMLElement | null;
+
+    if (!blockEl) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      return;
+    }
+
+    if (blockEl.closest('[data-block-code-id]')) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    const blockId = blockEl.getAttribute('data-block-id') || '';
+
+    const isBold = typeof document.queryCommandState === 'function' ? document.queryCommandState('bold') : false;
+    const isItalic = typeof document.queryCommandState === 'function' ? document.queryCommandState('italic') : false;
+    const isUnderline = typeof document.queryCommandState === 'function' ? document.queryCommandState('underline') : false;
+    const isStrike = typeof document.queryCommandState === 'function' ? document.queryCommandState('strikeThrough') : false;
+
+    let parent: Node | null = range.commonAncestorContainer;
+    let isCode = false;
+    let isLink = false;
+    let linkUrl = '';
+
+    while (parent && parent !== blockEl) {
+      if (parent.nodeType === Node.ELEMENT_NODE) {
+        const el = parent as HTMLElement;
+        if (el.tagName === 'CODE') isCode = true;
+        if (el.tagName === 'A') {
+          isLink = true;
+          linkUrl = el.getAttribute('href') || '';
+        }
+      }
+      parent = parent.parentNode;
+    }
+
+    setBubbleMenuState({
+      isOpen: true,
+      blockId,
+      position: {
+        top: rect.top,
+        left: rect.left + rect.width / 2,
+      },
+      formats: {
+        bold: isBold,
+        italic: isItalic,
+        underline: isUnderline,
+        strikethrough: isStrike,
+        code: isCode,
+        link: isLink,
+        linkUrl,
+      },
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      updateBubbleMenu();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [updateBubbleMenu]);
+
+  const handleFormat = useCallback(
+    (format: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code') => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+
+      if (format === 'bold') {
+        document.execCommand('bold', false);
+      } else if (format === 'italic') {
+        document.execCommand('italic', false);
+      } else if (format === 'underline') {
+        document.execCommand('underline', false);
+      } else if (format === 'strikethrough') {
+        document.execCommand('strikeThrough', false);
+      } else if (format === 'code') {
+        const range = sel.getRangeAt(0);
+        let codeParent: HTMLElement | null = null;
+        let p: Node | null = range.commonAncestorContainer;
+        while (p && p.nodeType !== Node.DOCUMENT_NODE) {
+          if (p.nodeType === Node.ELEMENT_NODE && (p as HTMLElement).tagName === 'CODE') {
+            codeParent = p as HTMLElement;
+            break;
+          }
+          p = p.parentNode;
+        }
+
+        if (codeParent) {
+          const text = codeParent.innerText || codeParent.textContent || '';
+          const textNode = document.createTextNode(text);
+          codeParent.parentNode?.replaceChild(textNode, codeParent);
+        } else {
+          const codeEl = document.createElement('code');
+          try {
+            range.surroundContents(codeEl);
+          } catch {
+            const contents = range.extractContents();
+            codeEl.appendChild(contents);
+            range.insertNode(codeEl);
+          }
+        }
+      }
+
+      if (bubbleMenuState.blockId) {
+        const blockEl = document.querySelector(`[data-block-id="${bubbleMenuState.blockId}"]`) as HTMLElement;
+        if (blockEl) {
+          const index = blocksRef.current.findIndex((b) => b.id === bubbleMenuState.blockId);
+          if (index !== -1) {
+            const hasHtml = /<[a-z][\s\S]*>/i.test(blockEl.innerHTML);
+            const val = hasHtml ? sanitizeHtml(blockEl.innerHTML) : (blockEl.innerText ?? blockEl.textContent ?? '');
+            handleChangeContent(index, val);
+          }
+        }
+      }
+
+      setTimeout(updateBubbleMenu, 10);
+    },
+    [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]
+  );
+
+  const handleSetLink = useCallback(
+    (url: string) => {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+
+      const range = sel.getRangeAt(0);
+      let aParent: HTMLElement | null = null;
+      let p: Node | null = range.commonAncestorContainer;
+      while (p && p.nodeType !== Node.DOCUMENT_NODE) {
+        if (p.nodeType === Node.ELEMENT_NODE && (p as HTMLElement).tagName === 'A') {
+          aParent = p as HTMLElement;
+          break;
+        }
+        p = p.parentNode;
+      }
+
+      if (aParent) {
+        aParent.setAttribute('href', url);
+        aParent.setAttribute('target', '_blank');
+        aParent.setAttribute('rel', 'noopener noreferrer');
+      } else {
+        document.execCommand('createLink', false, url);
+        const newA = range.commonAncestorContainer.parentElement?.querySelector(`a[href="${url}"]`);
+        if (newA) {
+          newA.setAttribute('target', '_blank');
+          newA.setAttribute('rel', 'noopener noreferrer');
+        }
+      }
+
+      if (bubbleMenuState.blockId) {
+        const blockEl = document.querySelector(`[data-block-id="${bubbleMenuState.blockId}"]`) as HTMLElement;
+        if (blockEl) {
+          const index = blocksRef.current.findIndex((b) => b.id === bubbleMenuState.blockId);
+          if (index !== -1) {
+            const val = sanitizeHtml(blockEl.innerHTML);
+            handleChangeContent(index, val);
+          }
+        }
+      }
+
+      setTimeout(updateBubbleMenu, 10);
+    },
+    [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]
+  );
+
+  const handleUnlink = useCallback(() => {
+    document.execCommand('unlink', false);
+    if (bubbleMenuState.blockId) {
+      const blockEl = document.querySelector(`[data-block-id="${bubbleMenuState.blockId}"]`) as HTMLElement;
+      if (blockEl) {
+        const index = blocksRef.current.findIndex((b) => b.id === bubbleMenuState.blockId);
+        if (index !== -1) {
+          const val = sanitizeHtml(blockEl.innerHTML);
+          handleChangeContent(index, val);
+        }
+      }
+    }
+    setTimeout(updateBubbleMenu, 10);
+  }, [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]);
+
   // 点击空白底部：聚焦最后一个块或追加新段落
   const handleBottomClick = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
@@ -980,7 +1337,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   return (
     <div
-      className="space-y-1 mt-4 min-h-[300px] cursor-text pb-24"
+      ref={editorContainerRef}
+      className="space-y-1 mt-4 min-h-[300px] cursor-text pb-24 relative"
       onClick={handleBottomClick}
     >
       {blocks.map((block, idx) => (
@@ -1011,8 +1369,36 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onToggleTodo={() => handleToggleTodo(idx)}
           onUndo={handleUndo}
           onRedo={handleRedo}
+          isSlashMenuOpen={slashMenuState.isOpen && slashMenuState.blockIndex === idx}
+          onSlashTrigger={(query, pos, slashIndex) =>
+            handleSlashTrigger(idx, query, pos, slashIndex)
+          }
+          onSlashClose={handleSlashClose}
+          onSlashKeyDown={handleSlashKeyDown}
         />
       ))}
+
+      {/* Day 5: 快捷斜杠指令浮层 */}
+      <SlashCommandMenu
+        isOpen={slashMenuState.isOpen}
+        query={slashMenuState.query}
+        position={slashMenuState.position}
+        selectedIndex={slashSelectedIndex}
+        onSelect={handleSelectSlashCommand}
+        onClose={handleSlashClose}
+        onHoverIndex={setSlashSelectedIndex}
+      />
+
+      {/* Day 5: 划选富文本浮动工具栏 */}
+      <BubbleMenu
+        isOpen={bubbleMenuState.isOpen}
+        position={bubbleMenuState.position}
+        formats={bubbleMenuState.formats}
+        onFormat={handleFormat}
+        onSetLink={handleSetLink}
+        onUnlink={handleUnlink}
+        onClose={() => setBubbleMenuState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

@@ -47,6 +47,10 @@ interface BlockItemProps {
   onToggleTodo?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  isSlashMenuOpen?: boolean;
+  onSlashTrigger?: (query: string, position: { top: number; left: number }, slashIndex: number) => void;
+  onSlashClose?: () => void;
+  onSlashKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
 }
 
 export const BlockItem: React.FC<BlockItemProps> = ({
@@ -71,6 +75,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
   onToggleTodo,
   onUndo,
   onRedo,
+  isSlashMenuOpen,
+  onSlashTrigger,
+  onSlashClose,
+  onSlashKeyDown,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
@@ -128,6 +136,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
             onPaste={onPaste}
             onUndo={onUndo}
             onRedo={onRedo}
+            isSlashMenuOpen={isSlashMenuOpen}
+            onSlashTrigger={onSlashTrigger}
+            onSlashClose={onSlashClose}
+            onSlashKeyDown={onSlashKeyDown}
           />
         );
 
@@ -170,6 +182,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
                 onPaste={onPaste}
                 onUndo={onUndo}
                 onRedo={onRedo}
+                isSlashMenuOpen={isSlashMenuOpen}
+                onSlashTrigger={onSlashTrigger}
+                onSlashClose={onSlashClose}
+                onSlashKeyDown={onSlashKeyDown}
               />
             </div>
           </div>
@@ -201,6 +217,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
                 onPaste={onPaste}
                 onUndo={onUndo}
                 onRedo={onRedo}
+                isSlashMenuOpen={isSlashMenuOpen}
+                onSlashTrigger={onSlashTrigger}
+                onSlashClose={onSlashClose}
+                onSlashKeyDown={onSlashKeyDown}
               />
             </div>
           </div>
@@ -256,6 +276,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
                 onPaste={onPaste}
                 onUndo={onUndo}
                 onRedo={onRedo}
+                isSlashMenuOpen={isSlashMenuOpen}
+                onSlashTrigger={onSlashTrigger}
+                onSlashClose={onSlashClose}
+                onSlashKeyDown={onSlashKeyDown}
               />
             </div>
           </div>
@@ -301,6 +325,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
             onPaste={onPaste}
             onUndo={onUndo}
             onRedo={onRedo}
+            isSlashMenuOpen={isSlashMenuOpen}
+            onSlashTrigger={onSlashTrigger}
+            onSlashClose={onSlashClose}
+            onSlashKeyDown={onSlashKeyDown}
           />
         );
 
@@ -327,6 +355,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
             onPaste={onPaste}
             onUndo={onUndo}
             onRedo={onRedo}
+            isSlashMenuOpen={isSlashMenuOpen}
+            onSlashTrigger={onSlashTrigger}
+            onSlashClose={onSlashClose}
+            onSlashKeyDown={onSlashKeyDown}
           />
         );
 
@@ -353,6 +385,10 @@ export const BlockItem: React.FC<BlockItemProps> = ({
               onPaste={onPaste}
               onUndo={onUndo}
               onRedo={onRedo}
+              isSlashMenuOpen={isSlashMenuOpen}
+              onSlashTrigger={onSlashTrigger}
+              onSlashClose={onSlashClose}
+              onSlashKeyDown={onSlashKeyDown}
             />
           </div>
         );

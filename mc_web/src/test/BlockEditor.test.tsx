@@ -974,6 +974,20 @@ describe('BlockEditor Component & Store Integration', () => {
     });
     expect(getDocBlocks(docId)[0]?.content).toBe('line1  \nline2');
 
+    // 27b-2: Shift+Tab 在行首（列 0）缩退测试
+    const docWithIndent = 'doc-code-dedent-col0';
+    registerTestDoc(docWithIndent, [
+      { id: 'c-ind', type: 'code', content: '  indented', properties: { language: 'typescript', wrap: false } },
+    ]);
+    render(<BlockEditor documentId={docWithIndent} initialBlocks={[{ id: 'c-ind', type: 'code', content: '  indented', properties: { language: 'typescript', wrap: false } }]} />);
+    const indTextarea = screen.getAllByLabelText('代码编辑区').slice(-1)[0] as HTMLTextAreaElement;
+    indTextarea.selectionStart = 0;
+    indTextarea.selectionEnd = 0;
+    act(() => {
+      fireEvent.keyDown(indTextarea, { key: 'Tab', shiftKey: true });
+    });
+    expect(getDocBlocks(docWithIndent)[0]?.content).toBe('indented');
+
     // 27c: Ctrl+Enter 退出到下方新段落
     act(() => {
       fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
@@ -1156,6 +1170,23 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(blocksAfter[0]?.content).toBe('const a = 1;');
     expect(blocksAfter[1]?.type).toBe('paragraph');
     expect(blocksAfter[1]?.content).toBe('段落文本');
+
+    // 容器隔离保障 2：若段落内容为空，按 Backspace 正常删除该多余空白块并聚焦代码块
+    const docEmptyP = 'doc-container-empty-p';
+    const initialEmpty: BlockNode[] = [
+      { id: 'c-code-2', type: 'code', content: 'const b = 2;', properties: { language: 'javascript', wrap: false } },
+      { id: 'p-empty-below', type: 'paragraph', content: '' },
+    ];
+    registerTestDoc(docEmptyP, initialEmpty);
+    const { container: containerEmpty } = render(<BlockEditor documentId={docEmptyP} initialBlocks={initialEmpty} />);
+    const emptyPEl = containerEmpty.querySelector('[data-block-id="p-empty-below"]') as HTMLElement;
+    setCaretPosition(emptyPEl, 0);
+    act(() => {
+      fireEvent.keyDown(emptyPEl, { key: 'Backspace' });
+    });
+    const blocksAfterEmptyBackspace = getDocBlocks(docEmptyP);
+    expect(blocksAfterEmptyBackspace.length).toBe(1);
+    expect(blocksAfterEmptyBackspace[0]?.type).toBe('code');
   });
 
   it('32. [Day 4] DocumentPage 级 Code / Quote / Callout 类型切换与撤销重做 (Undo/Redo)', () => {
@@ -1194,5 +1225,122 @@ describe('BlockEditor Component & Store Integration', () => {
       fireEvent.keyDown(pEl, { key: 'y', ctrlKey: true });
     });
     expect(getDocBlocks(pageId)[0]?.type).toBe('code');
+  });
+
+  it('33. [Day 4] 代码块 (CodeBlock) IME 输入法合成期安全防护：合成期间按 Backspace/Tab 不误触降级与快捷键', () => {
+    const docId = 'doc-code-ime';
+    const initial: BlockNode[] = [
+      { id: 'code-ime', type: 'code', content: '', properties: { language: 'typescript', wrap: false } },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const textarea = screen.getByLabelText('代码编辑区') as HTMLTextAreaElement;
+
+    // 1. 开启输入法拼音合成（例如输入拼音 zhongwen）
+    act(() => {
+      fireEvent.compositionStart(textarea);
+    });
+
+    // 2. 合成期间按 Backspace 撤销拼音字符，绝对不能导致空代码块误降级为段落
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'Backspace', nativeEvent: { isComposing: true } });
+    });
+    expect(getDocBlocks(docId)[0]?.type).toBe('code');
+
+    // 3. 合成期间按 Tab，不应当被拦截或插入空格
+    act(() => {
+      fireEvent.keyDown(textarea, { key: 'Tab', nativeEvent: { isComposing: true } });
+    });
+    expect(getDocBlocks(docId)[0]?.type).toBe('code');
+    expect(getDocBlocks(docId)[0]?.content).toBe('');
+
+    // 4. 输入法合成结束并上屏中文
+    act(() => {
+      fireEvent.change(textarea, { target: { value: '中文代码注释' } });
+      fireEvent.compositionEnd(textarea);
+    });
+    expect(getDocBlocks(docId)[0]?.content).toBe('中文代码注释');
+  });
+
+  it('34. [Day 5] 斜杠指令 (Slash Command `/`) 唤起、拼音与英文多模态搜索过滤、键盘选择与类型转换', () => {
+    const docId = 'doc-slash-command';
+    const initial: BlockNode[] = [
+      { id: 'p-slash', type: 'paragraph', content: '' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = document.querySelector('[data-block-id="p-slash"]') as HTMLElement;
+    expect(editorEl).toBeInTheDocument();
+
+    // 1. 输入 '/' 唤起斜杠指令浮动菜单
+    editorEl.innerText = '/';
+    setCaretPosition(editorEl, 1);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+
+    const menu = screen.getByRole('menu', { name: '快捷块类型选择' });
+    expect(menu).toBeInTheDocument();
+    expect(screen.getByText(/基础块指令/)).toBeInTheDocument();
+
+    // 2. 拼音缩写模糊过滤：输入 '/dm'，应当命中并呈现 '代码块'
+    editorEl.innerText = '/dm';
+    setCaretPosition(editorEl, 3);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+    expect(screen.getByText('代码块')).toBeInTheDocument();
+
+    // 3. 键盘回车确认转换
+    act(() => {
+      fireEvent.keyDown(editorEl, { key: 'Enter' });
+    });
+
+    // 确认已转换为 code 块，且 '/dm' 被完整切除
+    expect(getDocBlocks(docId)[0]?.type).toBe('code');
+    expect(getDocBlocks(docId)[0]?.content).toBe('');
+  });
+
+  it('35. [Day 5] 选区浮动菜单 (Bubble Menu) 划选唤起、行内工具栏渲染与防选区失焦保护', () => {
+    const docId = 'doc-bubble-menu';
+    const initial: BlockNode[] = [
+      { id: 'p-bubble', type: 'paragraph', content: 'Notion 知识库编辑器' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = screen.getByText('Notion 知识库编辑器');
+    expect(editorEl).toBeInTheDocument();
+
+    // 1. 模拟鼠标划选文本 "Notion"
+    const textNode = editorEl.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, 6);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+
+    // 2. 验证 BubbleMenu 工具栏出现
+    const toolbar = screen.getByRole('toolbar', { name: '文字浮动格式化工具栏' });
+    expect(toolbar).toBeInTheDocument();
+
+    const boldBtn = screen.getByTitle(/加粗/i);
+    const italicBtn = screen.getByTitle(/斜体/i);
+    const linkBtn = screen.getByTitle(/超链接/i);
+    expect(boldBtn).toBeInTheDocument();
+    expect(italicBtn).toBeInTheDocument();
+    expect(linkBtn).toBeInTheDocument();
+
+    // 3. 验证防失焦：onMouseDown 必须阻止默认行为以防选区塌陷
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    boldBtn.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
   });
 });

@@ -48,12 +48,17 @@
   - **引用块 (Quote block)**：语义化左侧高亮边框与斜体排版，支持在任意位置 Enter 拆分为两个引用块、空引用块 Enter / Backspace 安全退出降级为普通段落。
   - **提示块 (Callout block)**：独立容器化设计，支持 Popover 快速选择 12 款预设常用 Emoji/图标、右上角悬浮快速切换 5 种主题色彩基调 (`neutral`, `info`, `success`, `warning`, `danger`)；支持非空回车拆分与空块回车/退格安全退出。
   - **容器隔离与属性安全**：建立 `TEXT_MERGEABLE_BLOCK_TYPES` 白名单与 `cleanBlockProperties` 跨类型清洗规则；在 Code/Callout 下方退格时严格保护容器结构，不发生文本误合并；所有属性与结构变动全面接入 Store 撤销重做 (Undo/Redo) 栈。
-  - **全量自动化验证**：扩充 Vitest 组件测试至 32 项（全通过），`verify:day4`、`verify:day3`、`verify:day2` 脚本全部通过，TypeScript 与 Vite 生产构建零报错。
+  - **全量自动化验证**：扩充 Vitest 组件测试至 33 项（全通过），`verify:day4`、`verify:day3`、`verify:day2` 脚本全部通过，TypeScript 与 Vite 生产构建零报错。
+- **Day 5 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)**：
+  - **斜杠指令系统 (Slash Command `/`)**：输入 `/` 呼出轻量快捷命令菜单；计算光标相对视口位置精准浮动定位并防止下边缘溢出；支持全拼与拼音首字母模糊检索（如 `dm` 匹配代码块、`bt` 匹配标题、`db` 匹配待办、`ts` 匹配提示块）与英文指令；支持键盘 `↑`/`↓` 循环导航、`Enter` 选中转换并自动清除 `/` 触发词，接入 Undo/Redo 历史栈。
+  - **选区浮动工具栏 (Bubble Menu)**：划选文本时动态居中浮动于选区上方（顶端自动下翻）；提供加粗 (Bold)、斜体 (Italic)、下划线 (Underline)、删除线 (Strikethrough)、行内代码 (Inline Code) 与超链接 (Link) 6 大行内格式化；全工具项 `e.preventDefault()` 严防选区失焦坍塌；支持当前选区格式激活态感知与动态点亮；内置轻量 URL 输入弹窗。
+  - **行内安全与 XSS 防护**：建立轻量 `sanitizeHtml` 白名单清洗引擎，严格仅允许安全行内标签与合法协议 URL。
+  - **全量自动化验证**：Vitest 真实组件测试扩充至 35 项全部通过，新增 `verify:day5` 核心验收脚本，`verify:day4/3/2` 回归通过，TypeScript 与 Vite 生产构建零报错。
 
-## 🎯 Day 5 计划：斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)
+## 🎯 Day 6 计划：块级拖拽排序与批量操作
 
-1. 斜杠指令呼出面板：在空块或键入 `/` 时弹出块类型快速选择面板（支持中文拼音/英文模糊过滤搜索）。
-2. 文字选中浮动菜单 (Bubble Menu)：行内文本加粗 (Bold)、斜体 (Italic)、下划线 (Underline)、删除线 (Strikethrough)、行内代码 (Inline Code) 与超链接 (Link)。
+1. 块左侧 `6-dot` 悬浮手柄（Grip handle）渲染与交互。
+2. 块级拖拽重排 (Drag & Drop) 与批量框选。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -65,8 +70,9 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（32 项全部通过）。
-- 执行 `npm run verify:day4` 运行 Day 4 数据契约、语法高亮安全、容器隔离与键盘交互验收。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（35 项全部通过）。
+- 执行 `npm run verify:day5` 运行 Day 5 斜杠指令状态机、拼音算法、选区与安全清洗验收。
+- 执行 `npm run verify:day4` 运行 Day 4 代码块、引用块与提示块验收。
 - 执行 `npm run verify:day3` 运行 Day 3 列表与待办块验收。
 - 执行 `npm run verify:day2` 运行 Day 2 基础编辑器回归测试。
 - 执行 `npm run build` 完成 TypeScript 检查与生产打包构建。
@@ -75,6 +81,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 1 - Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 1 - Day 6: 块级拖拽排序与批量操作]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

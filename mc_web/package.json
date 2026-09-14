@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "verify:day2": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day2.mjs",
     "verify:day3": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day3.mjs",
-    "verify:day4": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day4.mjs"
+    "verify:day4": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day4.mjs",
+    "verify:day5": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day5.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

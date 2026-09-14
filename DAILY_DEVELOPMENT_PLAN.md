@@ -95,11 +95,25 @@ flowchart LR
     - 所有语言、色调、图标、折行修改与类型转换完整接入撤销/重做 (Undo/Redo) 历史栈。
   - [x] **测试套件与生产构建**：
     - 新增 `scripts/verify-day4.mjs` 覆盖语言/折行/色调/图标规范化、属性清洗、容器隔离白名单、Tab 缩进与状态机流转。
-    - 扩充 Vitest 组件测试至 **32 项**（新增 7 项深度覆盖代码块渲染、语言折行切换、剪贴板复制、Tab 缩进、XSS 注入防御、引用块拆分退出、提示块图标色调切换、容器隔离退格防护与 Store Undo/Redo）。
-    - 验证全量通过：`npm test` (32/32 通过)、`npm run verify:day2` (通过)、`npm run verify:day3` (通过)、`npm run verify:day4` (通过)、`npm run build` (零错误生产打包)。
-- [ ] **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单**
-  - 输入 `/` 呼出块选择快捷菜单（支持模糊拼音/英文搜索过滤）
-  - 选中文字后呼出 Bubble Menu（加粗、斜体、下划线、删除线、行内代码、超链接）
+    - 扩充 Vitest 组件测试至 **33 项**（全量覆盖代码块渲染与 Prism 主题高亮、语言折行切换、剪贴板复制、Tab 缩进与行首/多行 Shift+Tab 缩退、IME 输入法合成期安全防护、XSS 注入防御、引用块拆分退出、提示块图标色调切换、容器隔离退格防护与 Store Undo/Redo）。
+    - 验证全量通过：`npm test` (33/33 通过)、`npm run verify:day2` (通过)、`npm run verify:day3` (通过)、`npm run verify:day4` (通过)、`npm run build` (零错误生产打包)。
+- [x] **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)**
+  - **交付目标**：实现沉浸式流式写作的核心快捷交互——块级斜杠命令弹出面板与划选富文本浮动工具栏，彻底摆脱必须依赖鼠标左侧按钮切换类型与格式的低效链路。
+  - [x] **斜杠指令系统 (Slash Command `/`)**：
+    - 在段落及文本块中输入 `/` 呼出轻量快捷命令菜单；计算光标相对视口位置精准浮动定位（支持视口下边缘自动反向翻折）。
+    - 快速过滤引擎：支持全拼、拼音首字母（如 `dm`/`daima` 匹配代码块，`bt`/`biaoti` 匹配各级标题，`db`/`daiban` 匹配待办清单，`ts`/`tishi` 匹配高亮块）及英文关键词（如 `h1`-`h3`, `code`, `todo`, `quote`, `callout`, `divider`）。
+    - 键盘交互流转：`↑` / `↓` 循环高亮候选指令并自动滚动视口跟随，`Enter` / `Tab` 确认选中转换，`Escape` 或 Backspace 删掉 `/` 时注销关闭。
+    - 文本与类型转换闭环：确认指令后自动清除触发字符 `/` 及后续检索词，调用统一转换通道迁移块属性并保持光标位置，无缝纳管于 Undo/Redo 历史栈。
+  - [x] **选区浮动工具栏 (Bubble Menu)**：
+    - 监听文本划选事件（选区非折叠且字符数 > 0），动态居中浮动在选区正上方（视口顶部空间不足时自动下翻）。
+    - 6 种标准行内格式化：加粗 (`Bold`)、斜体 (`Italic`)、下划线 (`Underline`)、删除线 (`Strikethrough`)、行内代码 (`Inline Code`)、超链接 (`Hyperlink`)。
+    - 激活态动态感知：根据当前选区上下文高亮对应已启用的格式化按钮。
+    - 超链接交互：点击超链接弹出 URL 输入浮层，支持设置链接、修改链接、取消链接，附带基础合法 URL 校验。
+    - 焦点保护：所有工具栏按钮使用 `onMouseDown={(e) => e.preventDefault()}`，杜绝点击时选区失焦坍塌。
+  - [x] **测试套件与生产构建**：
+    - 新增 `scripts/verify-day5.mjs` 并注册 `verify:day5` 脚本，验证拼音/英文检索算法、斜杠指令状态机、行内格式数据安全。
+    - 扩充 Vitest 组件集成测试至 35 项，全量断言斜杠指令触发/过滤/键盘选择/转换，以及 Bubble Menu 划选唤出/格式切换/防失焦。
+    - 全量回归 Day 2 ~ Day 4 验收脚本，TypeScript 零错误，Vite 生产构建成功。
 - [ ] **Day 6: 块级拖拽排序与批量操作**
   - 实现块左侧 `6-dot` 悬浮手柄（Grip handle）
   - 支持块级拖拽重排与批量框选
@@ -221,17 +235,20 @@ flowchart LR
 
 ### 📊 当前整体进度概览
 - **当前所处 Sprint**: **Sprint 1 (脚手架与核心编辑器)**
-- **已完成天数**: `4 / 35`
-- **总体完成度**: `11%`
+- **已完成天数**: `5 / 35`
+- **总体完成度**: `14%`
 
 ```
-[█████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 11%
+[██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 14%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 4: 增强块组件 (Code / Quote / Callout)** 已圆满交付并通过全量验收！
-- **成果**：CodeBlock（多语言/折行/复制/Tab 缩进/React-safe Prism 语法树渲染）、QuoteBlock（语义化左框/斜体/拆分/退出）、CalloutBlock（12 款 Emoji 弹窗/5 色基调/拆分/退出）形成完整闭环；容器隔离防护杜绝文本误并入代码；测试套件扩充至 32 项（全绿），`verify:day4`、`verify:day3`、`verify:day2` 与生产构建全通过。
-- **明日聚焦**：准备启动 **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)**。
+- **状态**: **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)** 已圆满交付并通过全量验收！
+- **成果**：
+  1. **斜杠指令系统**：交付 `SlashCommandMenu.tsx`、`slashCommandUtils.ts` 与 `pinyinMatch.ts`，内置 11 种块类型的全拼/首字母拼音字典（如 `dm` 匹配代码块、`bt` 匹配各级标题、`db` 匹配待办、`ts` 匹配提示块）与英文指令；支持键盘 `↑`/`↓` 循环导航与视口自动滚动、`Enter`/`Tab` 确认转换、自动剔除 `/` 触发词并接入 Undo/Redo 历史栈；
+  2. **选区浮动工具栏**：交付 `BubbleMenu.tsx`，划选文本精准居中浮动定位（视口顶端下翻）；支持加粗、斜体、下划线、删除线、行内代码、超链接 6 大格式化操作；全按钮 `onMouseDown={(e) => e.preventDefault()}` 彻底防止选区失焦坍塌；支持当前选区格式激活态感知与动态点亮；内置轻量 URL 弹出输入框；
+  3. **数据安全与自动化验证**：交付 `sanitizeHtml.ts` 实现白名单机制防范 XSS 注入；Vitest 真实组件测试扩充至 35 项（全绿），新增 `verify:day5` 核心验收脚本，`verify:day4/3/2` 回归通过，TypeScript 与 Vite 生产构建零报错。
+- **明日聚焦**：准备启动 **Day 6: 块级拖拽排序与批量操作**（实现左侧 `6-dot` 悬浮手柄、拖拽重排与批量框选）。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -343,7 +360,7 @@ flowchart LR
 - [x] 组件测试覆盖三类块渲染、语言/tone/icon 切换、精确复制、多行代码、Tab 缩进、Enter/Backspace 边界、IME、主题及窄屏。
 - [x] 添加包含 `<script>`、HTML 标签和特殊字符的代码高亮用例，确认仅作为纯文本/Token 渲染，杜绝任何 DOM 注入与 XSS 风险。
 - [x] 添加 `DocumentPage` 集成用例，验证增强块的创建、转换与属性修改经过 Store 回传后仍可 Undo/Redo，切页不串写。
-- [x] 依次执行 `npm test`（32/32 全通过）、`npm run verify:day2`（通过）、`npm run verify:day3`（通过）、`npm run verify:day4`（通过）、`npm run build`（零报错打包成功）。
+- [x] 依次执行 `npm test`（33/33 全通过）、`npm run verify:day2`（通过）、`npm run verify:day3`（通过）、`npm run verify:day4`（通过）、`npm run build`（零报错打包成功）。
 
 #### Day 4 验收清单（已完成逐项核查）
 
@@ -353,6 +370,38 @@ flowchart LR
 - [x] 三类增强块与 Paragraph/H1-H3/List/Todo 相邻时，Enter/Backspace 和 Undo/Redo 行为符合既定容器隔离边界。
 - [x] 高亮渲染无 DOM 注入风险，按钮具备可访问名称 (`aria-label`)、键盘焦点和必要的状态提示。
 - [x] Day 2、Day 3 全量回归与生产构建通过；Day 5 的 Slash/Bubble Menu 和 Day 6 拖拽未混入本日交付。
+
+### Day 5 规划与实施指南（2026-09-14）
+
+#### 阶段 A：数据契约与拼音检索引擎
+- [x] 提取并规范 `SlashCommandItem` 结构，包含 `id`, `type`, `label`, `description`, `icon`, `keywords`, `pinyin`, `pinyinInitials`。
+- [x] 编写轻量拼音检索工具 `src/utils/pinyinMatch.ts`，内置常见块名称拼音全拼与首字母字典（如 `dm/daima` 对应代码块，`bt/biaoti` 对应标题，`db/daiban` 对应待办事项，`yf/yinyong` 对应引用，`ts/tishi` 对应提示块），支持极速无依赖模糊过滤。
+- [x] 规范行内富文本标签集合（仅白名单允许 `<b>`/`<strong>`, `<i>`/`<em>`, `<u>`, `<s>`/`<del>`, `<code>`, `<a>`），防止富文本引入 XSS。
+
+#### 阶段 B：斜杠指令组件 (SlashCommandMenu) 与键盘流转
+- [x] 创建 `src/components/editor/SlashCommandMenu.tsx`，接收 `query`, `position`, `onSelect`, `onClose` 等属性，实现视口防溢出定位（自动上下翻折）。
+- [x] 在 `TextBlock.tsx` 中识别 `/` 触发时机与捕获光标矩形坐标 (`Range.getBoundingClientRect()`)；在 IME 拼音合成期间 (`isComposingRef`) 严格屏蔽快捷菜单唤出。
+- [x] 在 `TextBlock.tsx` 的 `handleKeyDown` 中接管菜单激活状态下的按键：`ArrowUp`/`ArrowDown` 循环导航、`Enter`/`Tab` 确认选中并阻止默认换行、`Escape` 主动关闭。
+- [x] 选中指定块类型后，自动切除当前段落内的 `/query` 内容，通过 `handleChangeType` 无损迁移块类型，记录 Undo/Redo 历史，聚焦到新块。
+
+#### 阶段 C：浮动菜单组件 (Bubble Menu) 与行内格式化
+- [x] 创建 `src/components/editor/BubbleMenu.tsx`，监听 `selectionchange` 与 `mouseup`/`keyup`，当选区非折叠且字符数 > 0 时居中浮动于选区正上方。
+- [x] 实现加粗、斜体、下划线、删除线、行内代码、超链接 6 个操作项；所有按钮绑定 `onMouseDown={(e) => e.preventDefault()}` 严防选区失焦坍塌。
+- [x] 实现选区格式激活状态检测（根据光标所在 DOM 节点判定 `bold`, `italic`, `underline`, `strikeThrough`, `code`, `link` 是否处于激活态）并动态点亮高亮指示。
+- [x] 嵌入超链接 URL 快速输入浮层，支持回车确认设置链接、点击取消或移除链接。
+
+#### 阶段 D：测试套件、回归与验收收尾
+- [x] 新增 `scripts/verify-day5.mjs` 并注册 `npm run verify:day5`，覆盖拼音/英文检索算法、斜杠指令流转状态机、行内格式数据合规性。
+- [x] 在 `src/test/BlockEditor.test.tsx` 扩充 Day 5 专属测试用例（用例 34、35），覆盖斜杠菜单唤起、拼音搜索过滤、键盘导航转换、Bubble Menu 划选显示、行内格式操作及防失焦。
+- [x] 运行全量测试链路：`npm test`（35/35 项全通过）、`npm run verify:day2`、`npm run verify:day3`、`npm run verify:day4`、`npm run verify:day5`、`npx tsc --noEmit`、`npm run build`，全部零错误零警告。
+
+#### Day 5 验收清单（已完成逐项核查）
+- [x] 在空白或段落开头键入 `/` 瞬间唤起快捷指令面板，光标坐标定位精准，无跳动或遮挡。
+- [x] 输入拼音（如 `dm`）、全拼（如 `daima`）或英文（如 `code`）均可精准秒级筛选到代码块；中文输入法打字期间不误唤起或冲突。
+- [x] 键盘 `↑`/`↓` 可循环高亮候选指令，`Enter` 即可瞬间转换块类型，触发字符 `/` 自动清除，操作可 Ctrl+Z 撤销。
+- [x] 鼠标/键盘选中文字后，Bubble Menu 优雅浮动在选区正上方；点击加粗、斜体、下划线、删除线、行内代码可即时生效且选区不丢失。
+- [x] 点击超链接可输入链接地址，生成合法 `<a>` 标签；再次选中可修改或移除链接。
+- [x] Day 2 ~ Day 4 既有核心交互与属性隔离 100% 保持无回归，全套自动化验收通过。
 
 ---
 

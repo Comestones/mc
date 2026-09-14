@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Copy, Check, WrapText } from 'lucide-react';
 import Prism from 'prismjs';
+import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-python';
@@ -55,6 +56,11 @@ function renderPrismTokens(
     }
 
     const tokenType = token.type;
+    const aliases = Array.isArray(token.alias)
+      ? token.alias.join(' ')
+      : token.alias || '';
+    const classNames = `token ${tokenType} ${aliases}`.trim();
+
     const children = Array.isArray(token.content)
       ? renderPrismTokens(token.content, key)
       : typeof token.content === 'object' && token.content !== null
@@ -62,7 +68,7 @@ function renderPrismTokens(
       : String(token.content);
 
     return (
-      <span key={key} className={`token ${tokenType}`}>
+      <span key={key} className={classNames}>
         {children}
       </span>
     );
@@ -89,8 +95,19 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
+  const isComposingRef = useRef(false);
 
   const safeLanguage = normalizeCodeLanguage(language);
+
+  // 输入法合成期状态管理
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  const handleCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+    isComposingRef.current = false;
+    onChange(e.currentTarget.value);
+  };
 
   // 自动根据内容伸缩高度
   const adjustHeight = () => {
@@ -144,6 +161,11 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
 
   // 键盘快捷键监听
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 中文/输入法合成阶段不拦截任何按键，杜绝打断拼音或误触发降级
+    if (e.nativeEvent.isComposing || isComposingRef.current) {
+      return;
+    }
+
     // 1. Tab / Shift+Tab：缩进或缩退 2 个空格
     if (e.key === 'Tab') {
       e.preventDefault();
@@ -152,26 +174,76 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
       const end = el.selectionEnd;
 
       if (e.shiftKey) {
-        // 缩退 2 个空格
-        const before = content.substring(0, start);
-        const after = content.substring(end);
-        const lineStart = before.lastIndexOf('\n') + 1;
-        const currentLine = content.substring(lineStart, start);
+        // Shift+Tab 缩退
+        const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+        if (start !== end && content.substring(start, end).includes('\n')) {
+          // 多行选中批量缩退
+          const lineEndIndex = content.indexOf('\n', end);
+          const lineEnd = lineEndIndex === -1 ? content.length : lineEndIndex;
+          const selectedBlock = content.substring(lineStart, lineEnd);
+          const lines = selectedBlock.split('\n');
+          let removedFirst = 0;
+          let totalRemoved = 0;
 
-        if (currentLine.startsWith('  ')) {
-          const newContent = content.substring(0, lineStart) + currentLine.substring(2) + after;
+          const newLines = lines.map((line, idx) => {
+            const count = line.startsWith('  ') ? 2 : line.startsWith(' ') ? 1 : 0;
+            if (idx === 0) removedFirst = count;
+            totalRemoved += count;
+            return line.substring(count);
+          });
+
+          const newContent =
+            content.substring(0, lineStart) + newLines.join('\n') + content.substring(lineEnd);
           onChange(newContent);
           setTimeout(() => {
-            el.setSelectionRange(Math.max(lineStart, start - 2), Math.max(lineStart, end - 2));
+            el.setSelectionRange(
+              Math.max(lineStart, start - removedFirst),
+              Math.max(lineStart, end - totalRemoved)
+            );
           }, 0);
+        } else {
+          // 单行缩退：基于当前整行判断，解决光标在行首（start === lineStart）时缩退失效的问题
+          const lineEndIndex = content.indexOf('\n', start);
+          const lineEnd = lineEndIndex === -1 ? content.length : lineEndIndex;
+          const fullLine = content.substring(lineStart, lineEnd);
+          const count = fullLine.startsWith('  ') ? 2 : fullLine.startsWith(' ') ? 1 : 0;
+          if (count > 0) {
+            const newContent =
+              content.substring(0, lineStart) + fullLine.substring(count) + content.substring(lineEnd);
+            onChange(newContent);
+            setTimeout(() => {
+              el.setSelectionRange(
+                Math.max(lineStart, start - count),
+                Math.max(lineStart, end - count)
+              );
+            }, 0);
+          }
         }
       } else {
-        // 缩进 2 个空格
-        const newContent = content.substring(0, start) + '  ' + content.substring(end);
-        onChange(newContent);
-        setTimeout(() => {
-          el.setSelectionRange(start + 2, start + 2);
-        }, 0);
+        // Tab 缩进
+        if (start !== end && content.substring(start, end).includes('\n')) {
+          // 多行选中批量缩进
+          const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+          const lineEndIndex = content.indexOf('\n', end);
+          const lineEnd = lineEndIndex === -1 ? content.length : lineEndIndex;
+          const selectedBlock = content.substring(lineStart, lineEnd);
+          const lines = selectedBlock.split('\n');
+          const newLines = lines.map((line) => '  ' + line);
+          const addedTotal = lines.length * 2;
+          const newContent =
+            content.substring(0, lineStart) + newLines.join('\n') + content.substring(lineEnd);
+          onChange(newContent);
+          setTimeout(() => {
+            el.setSelectionRange(start + 2, end + addedTotal);
+          }, 0);
+        } else {
+          // 单行在光标处插入 2 个空格
+          const newContent = content.substring(0, start) + '  ' + content.substring(end);
+          onChange(newContent);
+          setTimeout(() => {
+            el.setSelectionRange(start + 2, start + 2);
+          }, 0);
+        }
       }
       return;
     }
@@ -329,6 +401,8 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           value={content}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           onScroll={handleScroll}
           aria-label="代码编辑区"
           spellCheck={false}

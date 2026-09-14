@@ -14,6 +14,10 @@ interface QuoteBlockProps {
   onPaste: (text: string, offset: number) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  isSlashMenuOpen?: boolean;
+  onSlashTrigger?: (query: string, position: { top: number; left: number }, slashIndex: number) => void;
+  onSlashClose?: () => void;
+  onSlashKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
 }
 
 export const QuoteBlock: React.FC<QuoteBlockProps> = ({
@@ -29,6 +33,10 @@ export const QuoteBlock: React.FC<QuoteBlockProps> = ({
   onPaste,
   onUndo,
   onRedo,
+  isSlashMenuOpen,
+  onSlashTrigger,
+  onSlashClose,
+  onSlashKeyDown,
 }) => {
   return (
     <div
@@ -49,6 +57,10 @@ export const QuoteBlock: React.FC<QuoteBlockProps> = ({
         onPaste={onPaste}
         onUndo={onUndo}
         onRedo={onRedo}
+        isSlashMenuOpen={isSlashMenuOpen}
+        onSlashTrigger={onSlashTrigger}
+        onSlashClose={onSlashClose}
+        onSlashKeyDown={onSlashKeyDown}
       />
     </div>
   );

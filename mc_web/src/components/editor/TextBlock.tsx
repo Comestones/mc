@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useLayoutEffect } from 'react';
 import { BlockType } from '../../types/document';
 import { cn } from '../../utils/cn';
+import { checkSlashTrigger } from '../../utils/slashCommandUtils';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 interface TextBlockProps {
   id: string;
@@ -19,6 +21,10 @@ interface TextBlockProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onFocus?: () => void;
+  isSlashMenuOpen?: boolean;
+  onSlashTrigger?: (query: string, position: { top: number; left: number }, slashIndex: number) => void;
+  onSlashClose?: () => void;
+  onSlashKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
 }
 
 function getCaretOffset(root: HTMLElement): number {
@@ -125,6 +131,10 @@ export const TextBlock: React.FC<TextBlockProps> = ({
   onUndo,
   onRedo,
   onFocus,
+  isSlashMenuOpen,
+  onSlashTrigger,
+  onSlashClose,
+  onSlashKeyDown,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -132,11 +142,18 @@ export const TextBlock: React.FC<TextBlockProps> = ({
   // 同步外部 content 变更（避免在用户输入期间覆盖导致光标跳跃）
   useEffect(() => {
     if (!contentRef.current) return;
-    const currentText = contentRef.current.innerText ?? contentRef.current.textContent ?? '';
-    if (currentText !== content) {
-      contentRef.current.innerText = content;
-      if (!contentRef.current.innerText && content) {
-        contentRef.current.textContent = content;
+    const hasHtml = /<[a-z][\s\S]*>/i.test(content);
+    if (hasHtml) {
+      if (contentRef.current.innerHTML !== content) {
+        contentRef.current.innerHTML = content;
+      }
+    } else {
+      const currentText = contentRef.current.innerText ?? contentRef.current.textContent ?? '';
+      if (currentText !== content) {
+        contentRef.current.innerText = content;
+        if (!contentRef.current.innerText && content) {
+          contentRef.current.textContent = content;
+        }
       }
     }
     // 确保空内容时 DOM 干净以便匹配 :empty 伪类
@@ -155,10 +172,33 @@ export const TextBlock: React.FC<TextBlockProps> = ({
     }
   }, [cursorFocus]);
 
+  const checkSlashCommand = (el: HTMLElement) => {
+    if (isComposingRef.current) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const offset = getCaretOffset(el);
+    const textBeforeCaret = (el.innerText ?? el.textContent ?? '').substring(0, offset);
+    const result = checkSlashTrigger(textBeforeCaret);
+    if (result.isTriggered) {
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const top = (rect.bottom && rect.bottom > 0 ? rect.bottom : elRect.bottom) + 4;
+      const left = rect.left && rect.left > 0 ? rect.left : elRect.left;
+      onSlashTrigger?.(result.query, { top, left }, result.slashIndex);
+    } else {
+      onSlashClose?.();
+    }
+  };
+
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     if (isComposingRef.current) return;
-    const text = e.currentTarget.innerText ?? e.currentTarget.textContent ?? '';
-    onChange(text);
+    const el = e.currentTarget;
+    const hasHtml = /<[a-z][\s\S]*>/i.test(el.innerHTML);
+    const val = hasHtml ? sanitizeHtml(el.innerHTML) : (el.innerText ?? el.textContent ?? '');
+    const cleaned = val === '<br>' ? '' : val;
+    onChange(cleaned);
+    checkSlashCommand(el);
   };
 
   const handleCompositionStart = () => {
@@ -167,14 +207,26 @@ export const TextBlock: React.FC<TextBlockProps> = ({
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLDivElement>) => {
     isComposingRef.current = false;
-    const text = e.currentTarget.innerText ?? e.currentTarget.textContent ?? '';
-    onChange(text);
+    const el = e.currentTarget;
+    const hasHtml = /<[a-z][\s\S]*>/i.test(el.innerHTML);
+    const val = hasHtml ? sanitizeHtml(el.innerHTML) : (el.innerText ?? el.textContent ?? '');
+    const cleaned = val === '<br>' ? '' : val;
+    onChange(cleaned);
+    checkSlashCommand(el);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // 中文/输入法合成阶段不拦截任何按键
     if (e.nativeEvent.isComposing || isComposingRef.current) {
       return;
+    }
+
+    // 若斜杠指令菜单处于开启状态，优先交由外部代理键盘事件（↑/↓/Enter/Tab/Escape）
+    if (isSlashMenuOpen && onSlashKeyDown) {
+      const handled = onSlashKeyDown(e);
+      if (handled) {
+        return;
+      }
     }
 
     if (e.key === 'Tab') {

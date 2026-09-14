@@ -21,6 +21,10 @@ interface CalloutBlockProps {
   onPaste: (text: string, offset: number) => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  isSlashMenuOpen?: boolean;
+  onSlashTrigger?: (query: string, position: { top: number; left: number }, slashIndex: number) => void;
+  onSlashClose?: () => void;
+  onSlashKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
 }
 
 const PRESET_EMOJIS = ['💡', 'ℹ️', '✅', '⚠️', '❌', '🔥', '📌', '🚀', '📝', '⭐', '💬', '🎉'];
@@ -70,6 +74,10 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
   onPaste,
   onUndo,
   onRedo,
+  isSlashMenuOpen,
+  onSlashTrigger,
+  onSlashClose,
+  onSlashKeyDown,
 }) => {
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isTonePickerOpen, setIsTonePickerOpen] = useState(false);
@@ -164,6 +172,10 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
           onPaste={onPaste}
           onUndo={onUndo}
           onRedo={onRedo}
+          isSlashMenuOpen={isSlashMenuOpen}
+          onSlashTrigger={onSlashTrigger}
+          onSlashClose={onSlashClose}
+          onSlashKeyDown={onSlashKeyDown}
         />
       </div>
 
