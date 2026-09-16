@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-09-13，处于 **Sprint 1，Day 1 至 Day 4 已圆满完成，Day 5 待开始**（4 / 35，约 11%）。
+截至 2026-09-16，处于 **Sprint 1，Day 1 至 Day 6 已圆满完成，Day 7 待开始**（6 / 35，约 17%）。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -53,12 +53,17 @@
   - **斜杠指令系统 (Slash Command `/`)**：输入 `/` 呼出轻量快捷命令菜单；计算光标相对视口位置精准浮动定位并防止下边缘溢出；支持全拼与拼音首字母模糊检索（如 `dm` 匹配代码块、`bt` 匹配标题、`db` 匹配待办、`ts` 匹配提示块）与英文指令；支持键盘 `↑`/`↓` 循环导航、`Enter` 选中转换并自动清除 `/` 触发词，接入 Undo/Redo 历史栈。
   - **选区浮动工具栏 (Bubble Menu)**：划选文本时动态居中浮动于选区上方（顶端自动下翻）；提供加粗 (Bold)、斜体 (Italic)、下划线 (Underline)、删除线 (Strikethrough)、行内代码 (Inline Code) 与超链接 (Link) 6 大行内格式化；全工具项 `e.preventDefault()` 严防选区失焦坍塌；支持当前选区格式激活态感知与动态点亮；内置轻量 URL 输入弹窗。
   - **行内安全与 XSS 防护**：建立轻量 `sanitizeHtml` 白名单清洗引擎，严格仅允许安全行内标签与合法协议 URL。
-  - **全量自动化验证**：Vitest 真实组件测试扩充至 35 项全部通过，新增 `verify:day5` 核心验收脚本，`verify:day4/3/2` 回归通过，TypeScript 与 Vite 生产构建零报错。
+  - **全量自动化验证**：Vitest 真实组件测试扩充至 40 项全部通过，`verify:day5` 核心验收脚本通过，TypeScript 与 Vite 生产构建零报错。
+- **Day 6 块级拖拽排序与批量操作 (Drag & Drop & Batch Operations)**：
+  - **6-dot 悬浮手柄**：在 `BlockItem.tsx` 交付可拖拽 `GripVertical` 抓手（`draggable={true}`，`cursor-grab`），悬浮或选中时显示，具备无障碍属性与测试属性隔离。
+  - **拖拽重排引擎**：基于 HTML5 Drag and Drop API 与 `reorderBlocks` 纯函数算法，支持单块与多块连续/非连续整体拖拽，动态计算目标块上下插入指示线 (Drop Indicator)，单次原子化提交 Undo/Redo 历史栈。
+  - **批量多选与操作**：支持普通点击单选、Shift+Click 连续区间选择 (`getBlocksRange`)、Ctrl/Cmd 增量多选，选区呈现淡蓝色高亮外框；交付 `BatchActionBar.tsx` 底部操作条，支持一键 Backspace/Delete 批量删除（清空后保底默认段落）、Ctrl+C 批量 Markdown 复制、Escape 取消选区。
+  - **全量自动化验证**：Vitest 真实组件测试扩充至 **46 项全部通过**，新增 `scripts/verify-day6.mjs` 覆盖 6 大纯函数测试集全部通过，`verify:day2` ~ `verify:day6` 回归全部通过，TypeScript 与 Vite 生产打包零报错。
 
-## 🎯 Day 6 计划：块级拖拽排序与批量操作
+## 🎯 Day 7 计划：本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结
 
-1. 块左侧 `6-dot` 悬浮手柄（Grip handle）渲染与交互。
-2. 块级拖拽重排 (Drag & Drop) 与批量框选。
+1. 本地状态即时自动保存 (IndexedDB)。
+2. 页面级联删除逻辑完善与 Sprint 1 整体编辑体验调优与代码审查。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -70,7 +75,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（35 项全部通过）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（46 项全部通过）。
+- 执行 `npm run verify:day6` 运行 Day 6 块级拖拽重排与批量操作验收。
 - 执行 `npm run verify:day5` 运行 Day 5 斜杠指令状态机、拼音算法、选区与安全清洗验收。
 - 执行 `npm run verify:day4` 运行 Day 4 代码块、引用块与提示块验收。
 - 执行 `npm run verify:day3` 运行 Day 3 列表与待办块验收。
@@ -81,6 +87,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 1 - Day 6: 块级拖拽排序与批量操作]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 1 - Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { BlockItem } from './BlockItem';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { BubbleMenu, FormatStates } from './BubbleMenu';
+import { BatchActionBar } from './BatchActionBar';
 import {
   SlashCommandItem,
   filterSlashCommands,
@@ -21,6 +22,9 @@ import {
   normalizeBlock,
   normalizeChecked,
   isTextMergeable,
+  reorderBlocks,
+  getBlocksRange,
+  serializeBlocksToMarkdown,
 } from '../../utils/blockUtils';
 
 interface BlockEditorProps {
@@ -58,6 +62,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     }
     return null;
   });
+
+  // Day 6: 批量选区与拖拽重排状态
+  const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
+  const lastSelectedBlockIdRef = useRef<string | null>(null);
+  const [dragState, setDragState] = useState<{
+    draggingIds: string[];
+    targetId: string | null;
+    position: 'top' | 'bottom' | null;
+  } | null>(null);
 
   // 撤销/重做历史栈
   const historyRef = useRef<BlockNode[][]>([getInitialBlocks()]);
@@ -140,6 +153,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       setBlocks(freshBlocks);
       historyRef.current = [freshBlocks];
       historyIndexRef.current = 0;
+      setSelectedBlockIds([]);
+      lastSelectedBlockIdRef.current = null;
+      setDragState(null);
 
       // 如果是唯一一个空段落的新页面，自动聚焦光标
       if (
@@ -195,6 +211,206 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       updateDocumentBlocks(documentId, target);
     }
   }, [documentId, updateDocumentBlocks]);
+
+  // Day 6: 选中指定块（支持普通点击、Shift 连续选区、Ctrl/Cmd 增量选区）
+  const handleSelectBlock = useCallback(
+    (e: React.MouseEvent, blockId: string) => {
+      e.stopPropagation();
+      if (e.shiftKey && lastSelectedBlockIdRef.current) {
+        // Shift + Click 连续范围多选
+        const range = getBlocksRange(
+          blocksRef.current,
+          lastSelectedBlockIdRef.current,
+          blockId
+        );
+        setSelectedBlockIds(range);
+      } else if (e.metaKey || e.ctrlKey) {
+        // Ctrl/Cmd + Click 单项反选/增选
+        setSelectedBlockIds((prev) =>
+          prev.includes(blockId)
+            ? prev.filter((id) => id !== blockId)
+            : [...prev, blockId]
+        );
+        lastSelectedBlockIdRef.current = blockId;
+      } else {
+        // 普通点击手柄：若已选中且唯一则取消选中，否则单选
+        setSelectedBlockIds((prev) =>
+          prev.length === 1 && prev[0] === blockId ? [] : [blockId]
+        );
+        lastSelectedBlockIdRef.current = blockId;
+      }
+    },
+    []
+  );
+
+  // Day 6: 批量删除选中的所有块
+  const handleDeleteSelectedBlocks = useCallback(() => {
+    if (selectedBlockIds.length === 0) return;
+    const selectedSet = new Set(selectedBlockIds);
+    let next = blocksRef.current.filter((b) => !selectedSet.has(b.id));
+    if (next.length === 0) {
+      next = [createDefaultParagraph()];
+    }
+    commitBlocks(next, {
+      recordHistoryNow: true,
+      focus: { blockId: next[0].id, offset: 0 },
+    });
+    setSelectedBlockIds([]);
+    lastSelectedBlockIdRef.current = null;
+  }, [selectedBlockIds, commitBlocks]);
+
+  // Day 6: 批量复制选中的所有块为 Markdown 文本
+  const handleCopySelectedBlocks = useCallback(() => {
+    if (selectedBlockIds.length === 0) return;
+    const selectedSet = new Set(selectedBlockIds);
+    const targetBlocks = blocksRef.current.filter((b) => selectedSet.has(b.id));
+    const md = serializeBlocksToMarkdown(targetBlocks);
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      navigator.clipboard.writeText(md).catch(() => {});
+    }
+  }, [selectedBlockIds]);
+
+  // Day 6: 拖拽起始事件 (Drag Start)
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, _index: number, blockId: string) => {
+      let draggingIds = [blockId];
+      if (selectedBlockIds.includes(blockId)) {
+        draggingIds = selectedBlockIds;
+      } else {
+        setSelectedBlockIds([blockId]);
+        lastSelectedBlockIdRef.current = blockId;
+      }
+
+      setDragState({
+        draggingIds,
+        targetId: null,
+        position: null,
+      });
+
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', blockId);
+        e.dataTransfer.setData(
+          'application/json',
+          JSON.stringify({ draggingIds })
+        );
+      }
+    },
+    [selectedBlockIds]
+  );
+
+  // Day 6: 拖拽经过事件 (Drag Over)
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, _index: number, blockId: string) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const relY = e.clientY - rect.top;
+      const position: 'top' | 'bottom' =
+        relY < rect.height / 2 ? 'top' : 'bottom';
+
+      setDragState((prev) => {
+        if (!prev) {
+          return {
+            draggingIds: [blockId],
+            targetId: blockId,
+            position,
+          };
+        }
+        if (prev.targetId === blockId && prev.position === position) {
+          return prev;
+        }
+        return { ...prev, targetId: blockId, position };
+      });
+    },
+    []
+  );
+
+  // Day 6: 拖拽离开事件 (Drag Leave)
+  const handleDragLeave = useCallback(
+    (_e: React.DragEvent, _index: number, _blockId: string) => {
+      // 避免子节点触发闪烁，不在此处清理
+    },
+    []
+  );
+
+  // Day 6: 拖拽放置事件 (Drop)
+  const handleDrop = useCallback(
+    (e: React.DragEvent, _index: number, targetId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!dragState || !dragState.draggingIds.length || !dragState.position) {
+        setDragState(null);
+        return;
+      }
+
+      const { draggingIds, position } = dragState;
+      const next = reorderBlocks(
+        blocksRef.current,
+        draggingIds,
+        targetId,
+        position
+      );
+
+      if (next !== blocksRef.current) {
+        commitBlocks(next, { recordHistoryNow: true });
+      }
+
+      setDragState(null);
+    },
+    [dragState, commitBlocks]
+  );
+
+  // Day 6: 拖拽结束事件 (Drag End)
+  const handleDragEnd = useCallback(() => {
+    setDragState(null);
+  }, []);
+
+  // Day 6: 全局键盘监听：批量删除 (Backspace/Delete)、取消选择 (Escape)、批量复制 (Ctrl+C)
+  useEffect(() => {
+    if (selectedBlockIds.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+
+      if (e.key === 'Escape') {
+        setSelectedBlockIds([]);
+        lastSelectedBlockIdRef.current = null;
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        const active = document.activeElement;
+        const isEditingText =
+          active &&
+          (active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA' ||
+            active.getAttribute('contenteditable') === 'true');
+
+        if (!isEditingText || selectedBlockIds.length > 1) {
+          e.preventDefault();
+          handleDeleteSelectedBlocks();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || selectedBlockIds.length > 1) {
+          handleCopySelectedBlocks();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    selectedBlockIds,
+    handleDeleteSelectedBlocks,
+    handleCopySelectedBlocks,
+  ]);
 
   // 更新某一块的内容
   const handleChangeContent = useCallback(
@@ -1029,21 +1245,79 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       }
 
       const curBlock = blocksRef.current[blockIndex];
-      // 清除正文中的 `/<query>`
+      // 清除正文中的 `/<query>` 或 `、<query>`
       const cleanedContent = stripSlashCommand(curBlock.content, slashIndex, query.length);
 
       const next = [...blocksRef.current];
-      const newProperties = cleanBlockProperties(item.type, curBlock.properties) || {};
-      next[blockIndex] = {
-        ...curBlock,
-        type: item.type,
-        content: cleanedContent,
-        properties: newProperties,
-      };
+      let focus: { blockId: string; offset: number | 'start' | 'end' } | null = null;
+
+      if (item.type === 'divider') {
+        next[blockIndex] = { ...curBlock, type: 'divider', content: '', properties: undefined };
+        // 如果是最后一个块，自动在其后追加一个段落以供继续输入
+        if (blockIndex === next.length - 1) {
+          const extra = createDefaultParagraph();
+          next.push(extra);
+          focus = { blockId: extra.id, offset: 0 };
+        } else {
+          const nextBlock = next[blockIndex + 1];
+          if (nextBlock) {
+            focus = { blockId: nextBlock.id, offset: 'start' };
+          }
+        }
+      } else if (isListType(item.type)) {
+        const isPrevList = isListType(curBlock.type);
+        const level = isPrevList ? getBlockLevel(curBlock) : 0;
+        const newProperties: Record<string, any> = cleanBlockProperties(item.type, curBlock.properties) || {};
+        newProperties.level = level;
+        if (item.type === 'todo') {
+          newProperties.checked = normalizeChecked(curBlock.properties?.checked);
+        } else {
+          delete newProperties.checked;
+        }
+
+        next[blockIndex] = {
+          ...curBlock,
+          type: item.type,
+          content: curBlock.type === 'divider' ? '' : cleanedContent,
+          properties: newProperties,
+        };
+        focus = { blockId: curBlock.id, offset: cleanedContent.length };
+      } else if (item.type === 'code') {
+        next[blockIndex] = {
+          ...curBlock,
+          type: 'code',
+          content: curBlock.type === 'divider' ? '' : cleanedContent,
+          properties: cleanBlockProperties('code', curBlock.properties) || {
+            language: 'javascript',
+            wrap: false,
+          },
+        };
+        focus = { blockId: curBlock.id, offset: cleanedContent.length };
+      } else if (item.type === 'callout') {
+        next[blockIndex] = {
+          ...curBlock,
+          type: 'callout',
+          content: curBlock.type === 'divider' ? '' : cleanedContent,
+          properties: cleanBlockProperties('callout', curBlock.properties) || {
+            icon: '💡',
+            tone: 'neutral',
+          },
+        };
+        focus = { blockId: curBlock.id, offset: cleanedContent.length };
+      } else {
+        const cleanedProperties = cleanBlockProperties(item.type, curBlock.properties);
+        next[blockIndex] = {
+          ...curBlock,
+          type: item.type,
+          content: curBlock.type === 'divider' ? '' : cleanedContent,
+          properties: cleanedProperties,
+        };
+        focus = { blockId: curBlock.id, offset: cleanedContent.length };
+      }
 
       commitBlocks(next, {
         recordHistoryNow: true,
-        focus: { blockId: curBlock.id, offset: cleanedContent.length },
+        focus: focus || undefined,
       });
 
       setSlashMenuState((prev) => ({ ...prev, isOpen: false }));
@@ -1085,6 +1359,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   );
 
   // Day 5: 选中文字浮动菜单 (Bubble Menu) 状态与处理器
+  const savedSelectionRangeRef = useRef<Range | null>(null);
   const [bubbleMenuState, setBubbleMenuState] = useState<{
     isOpen: boolean;
     blockId: string;
@@ -1108,12 +1383,27 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     if (typeof window === 'undefined') return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      // 若焦点处于浮动工具栏内（例如正在超链接输入框中输入），严防关闭菜单与丢失暂存选区
+      if (
+        typeof document !== 'undefined' &&
+        document.activeElement &&
+        document.activeElement.closest('[role="toolbar"]')
+      ) {
+        return;
+      }
       setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
       return;
     }
 
     const selectedText = sel.toString().trim();
     if (!selectedText) {
+      if (
+        typeof document !== 'undefined' &&
+        document.activeElement &&
+        document.activeElement.closest('[role="toolbar"]')
+      ) {
+        return;
+      }
       setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
       return;
     }
@@ -1141,6 +1431,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
       return;
     }
+
+    // 捕获并克隆当前有效选区供工具栏格式化与超链接使用
+    savedSelectionRangeRef.current = range.cloneRange();
 
     const rect = range.getBoundingClientRect();
     const blockId = blockEl.getAttribute('data-block-id') || '';
@@ -1196,18 +1489,29 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   const handleFormat = useCallback(
     (format: 'bold' | 'italic' | 'underline' | 'strikethrough' | 'code') => {
-      const sel = window.getSelection();
+      let sel = window.getSelection();
+      if ((!sel || sel.isCollapsed || !sel.rangeCount) && savedSelectionRangeRef.current) {
+        sel?.removeAllRanges();
+        sel?.addRange(savedSelectionRangeRef.current);
+        sel = window.getSelection();
+      }
       if (!sel || sel.isCollapsed || !sel.rangeCount) return;
 
-      if (format === 'bold') {
-        document.execCommand('bold', false);
-      } else if (format === 'italic') {
-        document.execCommand('italic', false);
-      } else if (format === 'underline') {
-        document.execCommand('underline', false);
-      } else if (format === 'strikethrough') {
-        document.execCommand('strikeThrough', false);
-      } else if (format === 'code') {
+      if (typeof document.execCommand === 'function') {
+        try {
+          if (format === 'bold') {
+            document.execCommand('bold', false);
+          } else if (format === 'italic') {
+            document.execCommand('italic', false);
+          } else if (format === 'underline') {
+            document.execCommand('underline', false);
+          } else if (format === 'strikethrough') {
+            document.execCommand('strikeThrough', false);
+          }
+        } catch {}
+      }
+
+      if (format === 'code') {
         const range = sel.getRangeAt(0);
         let codeParent: HTMLElement | null = null;
         let p: Node | null = range.commonAncestorContainer;
@@ -1242,19 +1546,30 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           if (index !== -1) {
             const hasHtml = /<[a-z][\s\S]*>/i.test(blockEl.innerHTML);
             const val = hasHtml ? sanitizeHtml(blockEl.innerHTML) : (blockEl.innerText ?? blockEl.textContent ?? '');
-            handleChangeContent(index, val);
+            const current = blocksRef.current;
+            const target = current[index];
+            if (target && target.content !== val) {
+              const next = [...current];
+              next[index] = { ...target, content: val };
+              commitBlocks(next, { recordHistoryNow: true });
+            }
           }
         }
       }
 
       setTimeout(updateBubbleMenu, 10);
     },
-    [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]
+    [bubbleMenuState.blockId, commitBlocks, updateBubbleMenu]
   );
 
   const handleSetLink = useCallback(
     (url: string) => {
-      const sel = window.getSelection();
+      let sel = window.getSelection();
+      if ((!sel || sel.isCollapsed || !sel.rangeCount) && savedSelectionRangeRef.current) {
+        sel?.removeAllRanges();
+        sel?.addRange(savedSelectionRangeRef.current);
+        sel = window.getSelection();
+      }
       if (!sel || !sel.rangeCount) return;
 
       const range = sel.getRangeAt(0);
@@ -1273,11 +1588,45 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         aParent.setAttribute('target', '_blank');
         aParent.setAttribute('rel', 'noopener noreferrer');
       } else {
-        document.execCommand('createLink', false, url);
-        const newA = range.commonAncestorContainer.parentElement?.querySelector(`a[href="${url}"]`);
-        if (newA) {
-          newA.setAttribute('target', '_blank');
-          newA.setAttribute('rel', 'noopener noreferrer');
+        if (typeof document.execCommand === 'function') {
+          try {
+            document.execCommand('createLink', false, url);
+          } catch {}
+        }
+
+        // 安全遍历修改新创建的 <a> 标签属性；若 execCommand 未生效（如 jsdom 环境），降级为 Range DOM 包裹
+        const containerNode = range.commonAncestorContainer;
+        const parentEl =
+          containerNode.nodeType === Node.ELEMENT_NODE
+            ? (containerNode as HTMLElement)
+            : containerNode.parentElement;
+        let found = false;
+        if (parentEl) {
+          const anchorList = parentEl.getElementsByTagName('a');
+          for (let i = 0; i < anchorList.length; i++) {
+            const a = anchorList[i];
+            if (a.getAttribute('href') === url) {
+              a.setAttribute('target', '_blank');
+              a.setAttribute('rel', 'noopener noreferrer');
+              found = true;
+            }
+          }
+        }
+
+        if (!found) {
+          try {
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+            try {
+              range.surroundContents(a);
+            } catch {
+              const contents = range.extractContents();
+              a.appendChild(contents);
+              range.insertNode(a);
+            }
+          } catch {}
         }
       }
 
@@ -1287,34 +1636,59 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           const index = blocksRef.current.findIndex((b) => b.id === bubbleMenuState.blockId);
           if (index !== -1) {
             const val = sanitizeHtml(blockEl.innerHTML);
-            handleChangeContent(index, val);
+            const current = blocksRef.current;
+            const target = current[index];
+            if (target && target.content !== val) {
+              const next = [...current];
+              next[index] = { ...target, content: val };
+              commitBlocks(next, { recordHistoryNow: true });
+            }
           }
         }
       }
 
       setTimeout(updateBubbleMenu, 10);
     },
-    [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]
+    [bubbleMenuState.blockId, commitBlocks, updateBubbleMenu]
   );
 
   const handleUnlink = useCallback(() => {
-    document.execCommand('unlink', false);
+    let sel = window.getSelection();
+    if ((!sel || sel.isCollapsed || !sel.rangeCount) && savedSelectionRangeRef.current) {
+      sel?.removeAllRanges();
+      sel?.addRange(savedSelectionRangeRef.current);
+      sel = window.getSelection();
+    }
+    if (typeof document.execCommand === 'function') {
+      try {
+        document.execCommand('unlink', false);
+      } catch {}
+    }
     if (bubbleMenuState.blockId) {
       const blockEl = document.querySelector(`[data-block-id="${bubbleMenuState.blockId}"]`) as HTMLElement;
       if (blockEl) {
         const index = blocksRef.current.findIndex((b) => b.id === bubbleMenuState.blockId);
         if (index !== -1) {
           const val = sanitizeHtml(blockEl.innerHTML);
-          handleChangeContent(index, val);
+          const current = blocksRef.current;
+          const target = current[index];
+          if (target && target.content !== val) {
+            const next = [...current];
+            next[index] = { ...target, content: val };
+            commitBlocks(next, { recordHistoryNow: true });
+          }
         }
       }
     }
     setTimeout(updateBubbleMenu, 10);
-  }, [bubbleMenuState.blockId, handleChangeContent, updateBubbleMenu]);
+  }, [bubbleMenuState.blockId, commitBlocks, updateBubbleMenu]);
 
-  // 点击空白底部：聚焦最后一个块或追加新段落
+  // 点击空白底部：聚焦最后一个块或追加新段落，并清空多选状态
   const handleBottomClick = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
+    setSelectedBlockIds([]);
+    lastSelectedBlockIdRef.current = null;
+
     const current = blocksRef.current;
     const lastBlock = current[current.length - 1];
     if (!lastBlock) {
@@ -1353,6 +1727,20 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               : undefined
           }
           cursorFocus={cursorFocus?.blockId === block.id ? cursorFocus : null}
+          isSelected={selectedBlockIds.includes(block.id)}
+          isDragging={dragState?.draggingIds.includes(block.id)}
+          dropPosition={
+            dragState?.targetId === block.id &&
+            !dragState.draggingIds.includes(block.id)
+              ? dragState.position
+              : null
+          }
+          onSelectBlock={handleSelectBlock}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
           onClearCursorFocus={() => setCursorFocus(null)}
           onChangeContent={(content) => handleChangeContent(idx, content)}
           onChangeType={(newType) => handleChangeType(idx, newType)}
@@ -1398,6 +1786,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         onSetLink={handleSetLink}
         onUnlink={handleUnlink}
         onClose={() => setBubbleMenuState((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Day 6: 批量操作悬浮条 */}
+      <BatchActionBar
+        selectedCount={selectedBlockIds.length}
+        onCopy={handleCopySelectedBlocks}
+        onDelete={handleDeleteSelectedBlocks}
+        onClear={() => {
+          setSelectedBlockIds([]);
+          lastSelectedBlockIdRef.current = null;
+        }}
       />
     </div>
   );

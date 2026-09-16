@@ -315,3 +315,128 @@ export function createDefaultParagraph(id?: string, content = ''): BlockNode {
     content,
   };
 }
+
+/**
+ * 块级拖拽重排纯函数算法：
+ * 支持单个块或多个选中块整体拖拽重排，严格保持多块之间的原始相对次序。
+ *
+ * @param blocks 当前文档所有块节点列表
+ * @param draggingIds 正在拖拽的块 ID 集合（支持单块或多块批量）
+ * @param targetId 放置目标块 ID
+ * @param position 放置位置：'top' 插入到目标块上方，'bottom' 插入到目标块下方
+ * @returns 排序后的新块数组（若目标在拖拽集合内或不存在，则安全返回原数组）
+ */
+export function reorderBlocks(
+  blocks: BlockNode[],
+  draggingIds: string[],
+  targetId: string,
+  position: 'top' | 'bottom'
+): BlockNode[] {
+  if (!blocks || blocks.length === 0 || !draggingIds || draggingIds.length === 0 || !targetId) {
+    return blocks;
+  }
+
+  // 放置目标本身若处于被拖拽集合内，属于自拖拽无操作，直接原样返回
+  if (draggingIds.includes(targetId)) {
+    return blocks;
+  }
+
+  // 提取需要移动的块，并保持它们在原始文档中的相对次序
+  const draggingIdSet = new Set(draggingIds);
+  const draggedBlocks = blocks.filter((b) => draggingIdSet.has(b.id));
+  if (draggedBlocks.length === 0) {
+    return blocks;
+  }
+
+  // 剔除正在移动的块得到剩余块列表
+  const remainingBlocks = blocks.filter((b) => !draggingIdSet.has(b.id));
+
+  // 查找目标块在剩余列表中的位置
+  const targetIndex = remainingBlocks.findIndex((b) => b.id === targetId);
+  if (targetIndex === -1) {
+    return blocks;
+  }
+
+  // 计算插入点
+  const insertIndex = position === 'top' ? targetIndex : targetIndex + 1;
+
+  // 拼接新块列表
+  return [
+    ...remainingBlocks.slice(0, insertIndex),
+    ...draggedBlocks,
+    ...remainingBlocks.slice(insertIndex),
+  ];
+}
+
+/**
+ * 范围多选块 ID 提取算法：
+ * 用于支持 Shift + Click 连续选区选择，计算从 startId 到 endId 之间的所有块 ID。
+ */
+export function getBlocksRange(
+  blocks: BlockNode[],
+  startId: string,
+  endId: string
+): string[] {
+  if (!blocks || blocks.length === 0) return [];
+  const startIndex = blocks.findIndex((b) => b.id === startId);
+  const endIndex = blocks.findIndex((b) => b.id === endId);
+
+  if (startIndex === -1 && endIndex === -1) return [];
+  if (startIndex === -1) return [endId];
+  if (endIndex === -1) return [startId];
+
+  const minIndex = Math.min(startIndex, endIndex);
+  const maxIndex = Math.max(startIndex, endIndex);
+
+  return blocks.slice(minIndex, maxIndex + 1).map((b) => b.id);
+}
+
+/**
+ * 批量块节点序列化为 Markdown / 纯文本：
+ * 用于支持多块选中时的一键 Ctrl+C 复制或数据导出。
+ */
+export function serializeBlocksToMarkdown(blocks: BlockNode[]): string {
+  if (!blocks || blocks.length === 0) return '';
+
+  return blocks
+    .map((block) => {
+      const content = block.content || '';
+      const level = normalizeLevel(block.properties?.level);
+      const indent = '  '.repeat(level);
+
+      switch (block.type) {
+        case 'heading1':
+          return `# ${content}`;
+        case 'heading2':
+          return `## ${content}`;
+        case 'heading3':
+          return `### ${content}`;
+        case 'bulletList':
+          return `${indent}- ${content}`;
+        case 'numberedList':
+          return `${indent}1. ${content}`;
+        case 'todo': {
+          const checked = normalizeChecked(block.properties?.checked);
+          return `${indent}- [${checked ? 'x' : ' '}] ${content}`;
+        }
+        case 'code': {
+          const lang = block.properties?.language || 'plaintext';
+          return `\`\`\`${lang}\n${content}\n\`\`\``;
+        }
+        case 'quote':
+          return `> ${content}`;
+        case 'callout': {
+          const tone = block.properties?.tone || 'neutral';
+          const icon = block.properties?.icon || '💡';
+          return `> [!${tone}] ${icon} ${content}`;
+        }
+        case 'divider':
+          return '---';
+        case 'paragraph':
+        default:
+          return content;
+      }
+    })
+    .join('\n\n');
+}
+

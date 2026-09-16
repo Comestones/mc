@@ -50,7 +50,7 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     type: 'numberedList',
     label: '有序列表',
     description: '带连续自动序号的数字列表',
-    keywords: ['ol', 'numbered', 'number', 'order', 'shuzi'],
+    keywords: ['ol', 'numbered', 'number', 'order', 'shuzi', '1', '1.'],
   },
   {
     id: 'cmd-todo',
@@ -110,31 +110,45 @@ export function filterSlashCommands(query: string): SlashCommandItem[] {
 /**
  * 检查当前光标前文本是否触发斜杠指令
  * 支持形式：
- * 1. 块首 `/`：如 `/` 或 `/code` 或 `/dm`
- * 2. 空格后 `/`：如 `文字 /code`
+ * 1. 块首 `/` 或 `、`：如 `/` 或 `/code` 或 `/dm` 或 `、dm`
+ * 2. 空格/换行/NBSP 后 `/` 或 `、`：如 `文字 /code`、`文字\u00A0/code`
  */
 export function checkSlashTrigger(textBeforeCaret: string): {
   isTriggered: boolean;
   query: string;
   slashIndex: number;
 } {
-  // 查找光标前最后一个 '/'
-  const lastSlash = textBeforeCaret.lastIndexOf('/');
+  // 查找光标前最后一个 '/' 或 '、' (中文输入法下的顿号)
+  const slashPos = textBeforeCaret.lastIndexOf('/');
+  const pausePos = textBeforeCaret.lastIndexOf('、');
+  const lastSlash = Math.max(slashPos, pausePos);
+
   if (lastSlash === -1) {
     return { isTriggered: false, query: '', slashIndex: -1 };
   }
 
-  // '/' 必须在块首或者前面是空格/换行
+  // 触发符必须在块首或者前面是空白字符（空格/换行/制表符/NBSP）
   if (lastSlash > 0) {
     const prevChar = textBeforeCaret[lastSlash - 1];
-    if (prevChar !== ' ' && prevChar !== '\n' && prevChar !== '\t') {
+    if (
+      prevChar !== ' ' &&
+      prevChar !== '\n' &&
+      prevChar !== '\t' &&
+      prevChar !== '\u00a0' &&
+      !/\s/.test(prevChar)
+    ) {
       return { isTriggered: false, query: '', slashIndex: -1 };
     }
   }
 
   const query = textBeforeCaret.substring(lastSlash + 1);
-  // 如果 query 中包含空格或换行，则视为指令已终止
-  if (query.includes(' ') || query.includes('\n')) {
+  // 如果 query 中包含空格、换行或 NBSP，则视为指令已终止
+  if (
+    query.includes(' ') ||
+    query.includes('\n') ||
+    query.includes('\t') ||
+    query.includes('\u00a0')
+  ) {
     return { isTriggered: false, query: '', slashIndex: -1 };
   }
 
@@ -146,14 +160,22 @@ export function checkSlashTrigger(textBeforeCaret: string): {
 }
 
 /**
- * 确认执行斜杠指令后，将正文中的 `/<query>` 清除
+ * 确认执行斜杠指令后，将正文中的 `/<query>` 或 `、<query>` 清除
  */
 export function stripSlashCommand(content: string, slashIndex: number, queryLength: number): string {
   if (slashIndex < 0) return content;
-  let before = content.substring(0, slashIndex);
-  let after = content.substring(slashIndex + 1 + queryLength);
-  if (before.endsWith(' ') && after.startsWith(' ')) {
-    after = after.substring(1);
+
+  // 纯文本直接切片清理
+  if (!/<[a-z][\s\S]*>/i.test(content)) {
+    let before = content.substring(0, slashIndex);
+    let after = content.substring(slashIndex + 1 + queryLength);
+    if (before.endsWith(' ') && after.startsWith(' ')) {
+      after = after.substring(1);
+    }
+    return (before + after).trim();
   }
-  return (before + after).trim();
+
+  // 包含 HTML 标签时，在保留标签结构的同时安全剔除末尾指令
+  const regex = /([/、][^\s<]*)(?![\s\S]*[/、])/;
+  return content.replace(regex, '').trim();
 }

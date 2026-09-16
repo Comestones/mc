@@ -301,6 +301,21 @@ export const TextBlock: React.FC<TextBlockProps> = ({
     onPaste(text, offset);
   };
 
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isComposingRef.current) return;
+    // 如果按下了方向键或导航键，光标可能已经移动，重新校验斜杠指令触发状态
+    if (
+      e.key === 'ArrowLeft' ||
+      e.key === 'ArrowRight' ||
+      e.key === 'Home' ||
+      e.key === 'End' ||
+      e.key === 'Backspace' ||
+      e.key === 'Delete'
+    ) {
+      checkSlashCommand(e.currentTarget);
+    }
+  };
+
   const getPlaceholder = () => {
     switch (type) {
       case 'heading1':
@@ -340,6 +355,8 @@ export const TextBlock: React.FC<TextBlockProps> = ({
       onCompositionStart={handleCompositionStart}
       onCompositionEnd={handleCompositionEnd}
       onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
+      onClick={(e) => checkSlashCommand(e.currentTarget)}
       onPaste={handlePasteEvent}
       onFocus={onFocus}
       className={cn(

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Plus,
   MoreVertical,
+  GripVertical,
   CheckSquare,
   Square,
   Heading1,
@@ -31,6 +32,15 @@ interface BlockItemProps {
   totalCount: number;
   orderNumber?: number;
   cursorFocus?: { offset: number | 'start' | 'end' } | null;
+  isSelected?: boolean;
+  isDragging?: boolean;
+  dropPosition?: 'top' | 'bottom' | null;
+  onSelectBlock?: (e: React.MouseEvent, blockId: string) => void;
+  onDragStart?: (e: React.DragEvent, index: number, blockId: string) => void;
+  onDragOver?: (e: React.DragEvent, index: number, blockId: string) => void;
+  onDragLeave?: (e: React.DragEvent, index: number, blockId: string) => void;
+  onDrop?: (e: React.DragEvent, index: number, blockId: string) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
   onClearCursorFocus?: () => void;
   onChangeContent: (content: string) => void;
   onChangeType: (type: BlockType) => void;
@@ -59,6 +69,15 @@ export const BlockItem: React.FC<BlockItemProps> = ({
   totalCount: _totalCount,
   orderNumber,
   cursorFocus,
+  isSelected,
+  isDragging,
+  dropPosition,
+  onSelectBlock,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
   onClearCursorFocus,
   onChangeContent,
   onChangeType,
@@ -399,10 +418,44 @@ export const BlockItem: React.FC<BlockItemProps> = ({
     <div
       data-block-wrapper-id={block.id}
       data-block-index={index}
-      className="group/block relative flex items-start -ml-8 pl-8 sm:-ml-12 sm:pl-12 transition-colors rounded-lg"
+      data-selected={isSelected ? 'true' : undefined}
+      onDragOver={(e) => onDragOver?.(e, index, block.id)}
+      onDragLeave={(e) => onDragLeave?.(e, index, block.id)}
+      onDrop={(e) => onDrop?.(e, index, block.id)}
+      className={cn(
+        'group/block relative flex items-start -ml-8 pl-8 sm:-ml-12 sm:pl-12 transition-all rounded-lg',
+        isSelected &&
+          'bg-blue-50/70 dark:bg-blue-950/30 ring-1 ring-blue-400/50 dark:ring-blue-500/50',
+        isDragging && 'opacity-40'
+      )}
     >
+      {/* 拖拽放置上方指示线 */}
+      {dropPosition === 'top' && (
+        <div
+          data-testid="drop-indicator-top"
+          className="absolute -top-[2px] left-0 right-0 h-[2px] bg-blue-500 rounded-full z-20 pointer-events-none shadow-[0_0_4px_rgba(59,130,246,0.6)]"
+        >
+          <div className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-blue-500" />
+        </div>
+      )}
+
+      {/* 拖拽放置下方指示线 */}
+      {dropPosition === 'bottom' && (
+        <div
+          data-testid="drop-indicator-bottom"
+          className="absolute -bottom-[2px] left-0 right-0 h-[2px] bg-blue-500 rounded-full z-20 pointer-events-none shadow-[0_0_4px_rgba(59,130,246,0.6)]"
+        >
+          <div className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full bg-blue-500" />
+        </div>
+      )}
+
       {/* 悬浮操作把手（Hover Action Bar） */}
-      <div className="absolute left-1 top-1 opacity-0 group-hover/block:opacity-100 flex items-center gap-0.5 transition-opacity select-none z-10">
+      <div
+        className={cn(
+          'absolute left-1 top-1 flex items-center gap-0.5 transition-opacity select-none z-10',
+          isSelected ? 'opacity-100' : 'opacity-0 group-hover/block:opacity-100'
+        )}
+      >
         {/* 快速在下方新增段落 */}
         <button
           type="button"
@@ -411,6 +464,27 @@ export const BlockItem: React.FC<BlockItemProps> = ({
           className="p-1 rounded text-text-muted-light hover:text-text-primary-light dark:text-text-muted-dark dark:hover:text-text-primary-dark hover:bg-sidebar-hover-light dark:hover:bg-sidebar-hover-dark transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
+        </button>
+
+        {/* 6-dot 拖拽重排与多选手柄 (Grip Handle) */}
+        <button
+          type="button"
+          draggable
+          data-testid="grip-handle"
+          data-grip-id={block.id}
+          aria-label="拖拽重排或点击选中"
+          title="拖拽重排，或 Shift+点击多选"
+          onDragStart={(e) => onDragStart?.(e, index, block.id)}
+          onDragEnd={onDragEnd}
+          onClick={(e) => {
+            onSelectBlock?.(e, block.id);
+          }}
+          className={cn(
+            'p-1 rounded cursor-grab active:cursor-grabbing text-text-muted-light hover:text-text-primary-light dark:text-text-muted-dark dark:hover:text-text-primary-dark hover:bg-sidebar-hover-light dark:hover:bg-sidebar-hover-dark transition-colors',
+            isSelected && 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/40'
+          )}
+        >
+          <GripVertical className="w-3.5 h-3.5" />
         </button>
 
         {/* 块类型选择器触发器 */}

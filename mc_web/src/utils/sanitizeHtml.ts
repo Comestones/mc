@@ -34,9 +34,11 @@ export function sanitizeHtml(rawHtml: string): string {
     // 降级正则白名单清洗（Node / SSR 环境）
     return rawHtml
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-      .replace(/href\s*=\s*["']\s*javascript:[^"']*["']/gi, '')
-      .replace(/<a\s+href=["']([^"']*)["'][^>]*>/gi, (_match, href) => {
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<(iframe|object|embed|svg)\b[^<]*(?:(?!<\/\1>)<[^<]*)*<\/\1>/gi, '')
+      .replace(/\s+on[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+      .replace(/href\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*'|javascript:[^\s>]*)/gi, '')
+      .replace(/<a\s+[^>]*href=["']?([^"'\s>]*)["']?[^>]*>/gi, (_match, href) => {
         if (!SAFE_URL_PATTERN.test(href.trim())) return '<a>';
         return `<a href="${href.trim()}" target="_blank" rel="noopener noreferrer">`;
       });
@@ -58,11 +60,11 @@ export function sanitizeHtml(rawHtml: string): string {
       if (!ALLOWED_TAGS.has(tagName)) {
         const frag = document.createDocumentFragment();
         while (el.firstChild) {
-          const cleanedChild = cleanNode(el.firstChild);
+          const child = el.firstChild;
+          el.removeChild(child);
+          const cleanedChild = cleanNode(child);
           if (cleanedChild) {
             frag.appendChild(cleanedChild);
-          } else {
-            el.removeChild(el.firstChild);
           }
         }
         return frag;

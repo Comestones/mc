@@ -112,11 +112,15 @@ flowchart LR
     - 焦点保护：所有工具栏按钮使用 `onMouseDown={(e) => e.preventDefault()}`，杜绝点击时选区失焦坍塌。
   - [x] **测试套件与生产构建**：
     - 新增 `scripts/verify-day5.mjs` 并注册 `verify:day5` 脚本，验证拼音/英文检索算法、斜杠指令状态机、行内格式数据安全。
-    - 扩充 Vitest 组件集成测试至 35 项，全量断言斜杠指令触发/过滤/键盘选择/转换，以及 Bubble Menu 划选唤出/格式切换/防失焦。
+    - 扩充 Vitest 组件集成测试至 40 项，全量断言斜杠指令触发/过滤/键盘选择/转换，以及 Bubble Menu 划选唤出/格式切换/防失焦/超链接全流程。
     - 全量回归 Day 2 ~ Day 4 验收脚本，TypeScript 零错误，Vite 生产构建成功。
-- [ ] **Day 6: 块级拖拽排序与批量操作**
+- [x] **Day 6: 块级拖拽排序与批量操作** *(已完成)*
   - 实现块左侧 `6-dot` 悬浮手柄（Grip handle）
-  - 支持块级拖拽重排与批量框选
+  - 支持单块与多块 HTML5 拖拽重排与平滑放置指示器 (Drop Indicator)
+  - 支持 Shift+Click 连续范围多选、Ctrl/Cmd 单项反选与多块批量高亮
+  - 支持一键 Backspace/Delete 批量删除、Ctrl+C 批量 Markdown 复制与底部悬浮工具栏
+  - 批量操作与拖拽重排完整接入 Undo/Redo 历史栈
+  - Vitest 集成测试扩充至 46 项，注册 `verify:day6` 验收脚本全量通过
 - [ ] **Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结**
   - 本地状态即时自动保存 (IndexedDB)
   - Sprint 1 整体编辑体验调优与代码审查
@@ -235,20 +239,21 @@ flowchart LR
 
 ### 📊 当前整体进度概览
 - **当前所处 Sprint**: **Sprint 1 (脚手架与核心编辑器)**
-- **已完成天数**: `5 / 35`
-- **总体完成度**: `14%`
+- **已完成天数**: `6 / 35`
+- **总体完成度**: `17%`
 
 ```
-[██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 14%
+[███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 17%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 5: 斜杠指令 (Slash Command `/`) 与浮动菜单 (Bubble Menu)** 已圆满交付并通过全量验收！
+- **状态**: **Day 6: 块级拖拽排序与批量操作** 已圆满交付并通过全量验收！
 - **成果**：
-  1. **斜杠指令系统**：交付 `SlashCommandMenu.tsx`、`slashCommandUtils.ts` 与 `pinyinMatch.ts`，内置 11 种块类型的全拼/首字母拼音字典（如 `dm` 匹配代码块、`bt` 匹配各级标题、`db` 匹配待办、`ts` 匹配提示块）与英文指令；支持键盘 `↑`/`↓` 循环导航与视口自动滚动、`Enter`/`Tab` 确认转换、自动剔除 `/` 触发词并接入 Undo/Redo 历史栈；
-  2. **选区浮动工具栏**：交付 `BubbleMenu.tsx`，划选文本精准居中浮动定位（视口顶端下翻）；支持加粗、斜体、下划线、删除线、行内代码、超链接 6 大格式化操作；全按钮 `onMouseDown={(e) => e.preventDefault()}` 彻底防止选区失焦坍塌；支持当前选区格式激活态感知与动态点亮；内置轻量 URL 弹出输入框；
-  3. **数据安全与自动化验证**：交付 `sanitizeHtml.ts` 实现白名单机制防范 XSS 注入；Vitest 真实组件测试扩充至 35 项（全绿），新增 `verify:day5` 核心验收脚本，`verify:day4/3/2` 回归通过，TypeScript 与 Vite 生产构建零报错。
-- **明日聚焦**：准备启动 **Day 6: 块级拖拽排序与批量操作**（实现左侧 `6-dot` 悬浮手柄、拖拽重排与批量框选）。
+  1. **6-dot 悬浮手柄**：在 `BlockItem.tsx` 交付可拖拽 `GripVertical` 抓手（`draggable={true}`，`cursor-grab`），支持选中态常显与悬浮显示；
+  2. **拖拽重排引擎**：在 `blockUtils.ts` 交付 `reorderBlocks` 纯函数算法，支持单块与多块连续/非连续相对次序保持，动态渲染上下放置指示线 (Drop Indicator)；
+  3. **批量多选与操作**：实现普通点击单选、Shift+Click 连续范围选择 (`getBlocksRange`)、Ctrl/Cmd 增量多选；交付 `BatchActionBar.tsx` 底部操作条，支持一键批量删除 (Backspace/Delete)、批量复制 (Ctrl+C)、取消选区 (Escape) 并接入 Undo/Redo 历史栈；
+  4. **自动化测试与构建**：新增 `scripts/verify-day6.mjs` 覆盖 6 大算法测试集全部通过，Vitest 集成测试扩充至 **46 项**全部通过，全量回归 Day 2 ~ Day 5 验收脚本，TypeScript 零错误，Vite 生产构建成功。
+- **明日聚焦**：准备启动 **Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结**（本地自动持久化、级联删除与整体体验调优）。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -392,8 +397,8 @@ flowchart LR
 
 #### 阶段 D：测试套件、回归与验收收尾
 - [x] 新增 `scripts/verify-day5.mjs` 并注册 `npm run verify:day5`，覆盖拼音/英文检索算法、斜杠指令流转状态机、行内格式数据合规性。
-- [x] 在 `src/test/BlockEditor.test.tsx` 扩充 Day 5 专属测试用例（用例 34、35），覆盖斜杠菜单唤起、拼音搜索过滤、键盘导航转换、Bubble Menu 划选显示、行内格式操作及防失焦。
-- [x] 运行全量测试链路：`npm test`（35/35 项全通过）、`npm run verify:day2`、`npm run verify:day3`、`npm run verify:day4`、`npm run verify:day5`、`npx tsc --noEmit`、`npm run build`，全部零错误零警告。
+- [x] 在 `src/test/BlockEditor.test.tsx` 扩充 Day 5 专属测试用例（用例 34 ~ 40），覆盖斜杠菜单唤起、拼音搜索过滤、键盘导航转换、Bubble Menu 划选显示、行内格式操作、防失焦、超链接创建与选区恢复、嵌套标签死循环防御、NBSP与中文顿号唤起、光标移动退出菜单。
+- [x] 运行全量测试链路：`npm test`（40/40 项全通过）、`npm run verify:day2`、`npm run verify:day3`、`npm run verify:day4`、`npm run verify:day5`、`npx tsc --noEmit`、`npm run build`，全部零错误零警告。
 
 #### Day 5 验收清单（已完成逐项核查）
 - [x] 在空白或段落开头键入 `/` 瞬间唤起快捷指令面板，光标坐标定位精准，无跳动或遮挡。
@@ -402,6 +407,39 @@ flowchart LR
 - [x] 鼠标/键盘选中文字后，Bubble Menu 优雅浮动在选区正上方；点击加粗、斜体、下划线、删除线、行内代码可即时生效且选区不丢失。
 - [x] 点击超链接可输入链接地址，生成合法 `<a>` 标签；再次选中可修改或移除链接。
 - [x] Day 2 ~ Day 4 既有核心交互与属性隔离 100% 保持无回归，全套自动化验收通过。
+
+### Day 6 实施与交付记录（2026-09-16）
+
+#### 阶段 A：6-dot 悬浮手柄与 UI 准备 (Grip Handle & UI)
+- [x] 在 `BlockItem.tsx` 左侧增加专门的 `6-dot` 拖拽手柄区域 (`GripVertical` 图标)，悬浮或选中时优雅显现。
+- [x] 手柄设置 `draggable={true}`，支持鼠标拖拽，支持普通点击单选、`Shift + Click` 范围多选与 `Ctrl/Cmd + Click` 增量多选。
+- [x] 妥善解决手柄与编辑区内容选择器的选择器冲突 (`data-grip-id` 隔离)，保证可访问性与焦点安全。
+
+#### 阶段 B：拖拽重排引擎 (Drag and Drop Engine)
+- [x] 基于 HTML5 Drag and Drop API 挂载核心事件：`onDragStart`, `onDragOver`, `onDragLeave`, `onDrop`, `onDragEnd`。
+- [x] **拖拽起始**：设置合理的 `dataTransfer` 携带拖拽块 ID，被拖拽块应用 `opacity-40` 半透明样式。
+- [x] **悬浮指示器 (Drop Indicator)**：光标进入目标块上半部或下半部时，动态渲染高亮蓝色指示线与圆点端点，提示用户释放后的准确插入位置。
+- [x] **重排算法与防呆**：在 `blockUtils.ts` 交付 `reorderBlocks` 纯函数，支持单块与多块相对次序保持，严密拦截自拖拽与非法目标，单次提交历史栈。
+
+#### 阶段 C：多块批量选区与操作 (Batch Selection)
+- [x] **选区状态管理**：在 `BlockEditor.tsx` 维持 `selectedBlockIds` 选区集合与 `lastSelectedBlockIdRef`。
+- [x] **多端多模式框选**：支持普通点击单选、`Shift + 点击手柄` 连续区间选区 (`getBlocksRange`)，支持 `Ctrl/Cmd + 点击` 增量多选。
+- [x] **视觉反馈与悬浮条**：选中的块呈现淡蓝色高亮与外框线；交付 `BatchActionBar.tsx` 底部操作条，显示已选块计数并支持一键复制与删除。
+- [x] **批量操作闭环**：支持一键 `Backspace / Delete` 批量删除（清空后默认保底段落）、`Ctrl+C` 批量复制 Markdown 格式至剪贴板、`Escape` 取消选区，全部操作原子化计入 Undo/Redo 历史栈。
+
+#### 阶段 D：测试套件、回归与验收收尾
+- [x] 新增 `scripts/verify-day6.mjs` 测试脚本并在 `package.json` 注册 `verify:day6`，全量覆盖单块重排、自拖拽防呆、批量连续/非连续拖拽、区间多选、批量删除保底与 Markdown 序列化 6 大测试集。
+- [x] 在 `src/test/BlockEditor.test.tsx` 扩充 Day 6 专属测试用例（用例 41 ~ 46），覆盖 6-dot 手柄渲染与属性、HTML5 拖拽重排全流程、Shift 连续多选与高亮、Backspace 批量删除、拖拽与批量删除的 Undo/Redo 历史栈流转、批量 Markdown 复制。
+- [x] 运行全量测试链路：`npm test`（46/46 项全通过）、`npm run verify:day2`、`npm run verify:day3`、`npm run verify:day4`、`npm run verify:day5`、`npm run verify:day6`、`npx tsc --noEmit`、`npm run build`，全部零错误零警告。
+
+#### Day 6 验收清单（已完成逐项核查）
+- [x] 块左侧提供美观的 6-dot 悬浮手柄 (`GripVertical`)，手柄可抓取拖拽，具备规范的 `aria-label` 与测试标记。
+- [x] 单块拖拽平滑移动，目标块上方/下方动态呈现明显的蓝色高亮插入指示线，松手后块准确重排。
+- [x] 拖拽支持自拖拽与越界防呆，不产生循环引用或脏数据，拖拽排序结果完整接入 Undo/Redo 历史栈。
+- [x] 支持通过 6-dot 手柄执行单选、Shift+Click 连续区间多选，多选后块背景淡蓝色高亮。
+- [x] 批量选中多块后，底部悬浮展示 `BatchActionBar`，支持一键复制 Markdown 与一键批量删除，按 Escape 安全取消。
+- [x] 批量删除所有块时自动保留一个空白默认段落，删除操作可 Ctrl+Z 瞬间恢复。
+- [x] Day 2 ~ Day 5 既有功能（斜杠指令、Bubble Menu、各种块类型）100% 保持无回归，全套自动化验收通过。
 
 ---
 

@@ -99,7 +99,12 @@ console.log('\n▶ 测试 2: filterSlashCommands 指令过滤体系核查...');
   assert.ok(hCmds.some((c) => c.type === 'heading2'));
   assert.ok(hCmds.some((c) => c.type === 'heading3'));
 
-  // 2d: 搜索不存在的指令
+  // 2d: 搜索 '1' 命中一级标题与有序列表
+  const numCmds = filterSlashCommands('1');
+  assert.ok(numCmds.some((c) => c.type === 'heading1'));
+  assert.ok(numCmds.some((c) => c.type === 'numberedList'));
+
+  // 2e: 搜索不存在的指令
   const noneCmds = filterSlashCommands('nonexistent_command_123');
   assert.equal(noneCmds.length, 0, '非法指令必须返回空结果');
   console.log('  ✔ 指令过滤体系通过');
@@ -137,7 +142,24 @@ console.log('\n▶ 测试 3: checkSlashTrigger 触发条件与边界防御核查
   // 3f: 无斜杠
   const t6 = checkSlashTrigger('普通文字内容');
   assert.equal(t6.isTriggered, false);
-  console.log('  ✔ 斜杠指令触发状态机通过');
+
+  // 3g: NBSP (\u00A0) 后触发斜杠 (P2-2 修复验证)
+  const t7 = checkSlashTrigger('文字\u00a0/code');
+  assert.equal(t7.isTriggered, true);
+  assert.equal(t7.query, 'code');
+  assert.equal(t7.slashIndex, 3);
+
+  // 3h: 中文输入法顿号 (、) 触发 (P2-2 改进验证)
+  const t8 = checkSlashTrigger('、dm');
+  assert.equal(t8.isTriggered, true);
+  assert.equal(t8.query, 'dm');
+  assert.equal(t8.slashIndex, 0);
+
+  const t9 = checkSlashTrigger('前置文本 、todo');
+  assert.equal(t9.isTriggered, true);
+  assert.equal(t9.query, 'todo');
+  assert.equal(t9.slashIndex, 5);
+  console.log('  ✔ 斜杠与中文顿号指令触发状态机（含 NBSP 容错）通过');
 }
 
 // 测试用例 4: 确认指令后正文文本清理 (stripSlashCommand)
@@ -154,7 +176,13 @@ console.log('\n▶ 测试 4: stripSlashCommand 触发字符清洗核查...');
 
   // 4d: 文本中间 /todo 清洗
   assert.equal(stripSlashCommand('前置 /todo 后置', 3, 4), '前置 后置');
-  console.log('  ✔ 触发字符清洗通过');
+
+  // 4e: 富文本内容中的 /dm 清洗（避免破坏 HTML 结构）
+  assert.equal(stripSlashCommand('<b>这是富文本</b> /dm', 14, 2), '<b>这是富文本</b>');
+
+  // 4f: 中文顿号 、code 清洗
+  assert.equal(stripSlashCommand('前置文本 、code', 5, 4), '前置文本');
+  console.log('  ✔ 触发字符清洗（纯文本与 HTML）通过');
 }
 
 // 测试用例 5: 安全 HTML 清洗与 XSS 防护 (sanitizeHtml)
@@ -201,11 +229,22 @@ console.log('\n▶ 测试 5: sanitizeHtml 行内富文本安全白名单与 XSS 
   const cleanedHref = sanitizeHtml(dangerousHref);
   assert.ok(!cleanedHref.includes('javascript:'), '必须剥离 javascript: 协议链接');
 
-  // 5f: 边界空值
+  // 5f: 深度嵌套非白名单标签不死循环 (P1-1 修复验证)
+  const nestedBadTags = '<div><p><section><span>安全文本</span></section></p></div>';
+  const cleanedNested = sanitizeHtml(nestedBadTags);
+  assert.ok(cleanedNested.includes('安全文本'), '嵌套非白名单标签内的安全文本必须保留');
+  assert.ok(!cleanedNested.includes('<script>'));
+
+  // 5g: 特殊字符 URL 安全支持 (P2-3 修复验证)
+  const queryUrl = '<a href="https://example.com?tags[0]=1&name=test">查询链接</a>';
+  const cleanedQueryUrl = sanitizeHtml(queryUrl);
+  assert.ok(cleanedQueryUrl.includes('https://example.com?tags[0]=1&name=test'));
+
+  // 5h: 边界空值
   assert.equal(sanitizeHtml(''), '');
   assert.equal(sanitizeHtml(null), '');
   assert.equal(sanitizeHtml(undefined), '');
-  console.log('  ✔ 行内富文本安全白名单与 XSS 拦截通过');
+  console.log('  ✔ 行内富文本安全白名单与 XSS 拦截（含死循环防御与特殊 URL）通过');
 }
 
 console.log('\n======================================================');

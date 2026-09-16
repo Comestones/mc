@@ -4,6 +4,7 @@ import { BlockEditor } from '../components/editor/BlockEditor';
 import { DocumentPage } from '../pages/DocumentPage';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { BlockNode, DocumentItem } from '../types/document';
+import { sanitizeHtml } from '../utils/sanitizeHtml';
 
 // 辅助函数：在 contenteditable 元素中定位光标
 function setCaretPosition(el: HTMLElement, offset: number) {
@@ -1342,5 +1343,441 @@ describe('BlockEditor Component & Store Integration', () => {
     const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
     boldBtn.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('36. [Day 5] Bubble Menu: 超链接完整创建流程、选区防丢失保护与安全属性生成 (P1-2 & P2-3 修复)', () => {
+    const docId = 'doc-bubble-link';
+    const initial: BlockNode[] = [
+      { id: 'p-link', type: 'paragraph', content: '点击访问 Google 搜索引擎' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = screen.getByText('点击访问 Google 搜索引擎');
+    expect(editorEl).toBeInTheDocument();
+
+    // 1. 划选 "Google"
+    const textNode = editorEl.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, 5);
+    range.setEnd(textNode, 11);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    act(() => {
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+
+    const linkBtn = screen.getByRole('button', { name: '超链接' });
+    expect(linkBtn).toBeInTheDocument();
+
+    // 2. 点击超链接按钮，弹出输入面板
+    act(() => {
+      fireEvent.click(linkBtn);
+    });
+
+    const urlInput = screen.getByPlaceholderText(/输入链接地址/i);
+    expect(urlInput).toBeInTheDocument();
+
+    // 验证输入包含特殊字符 query 的 URL (P2-3 崩溃防护)
+    act(() => {
+      fireEvent.change(urlInput, { target: { value: 'google.com?tags[0]=1&q=test' } });
+    });
+
+    // 3. 按 Enter 确认链接
+    act(() => {
+      fireEvent.keyDown(urlInput, { key: 'Enter' });
+    });
+
+    // 确认已生成 target="_blank" rel="noopener noreferrer" 的 <a> 标签
+    const aTag = editorEl.querySelector('a');
+    expect(aTag).toBeInTheDocument();
+    expect(aTag?.getAttribute('href')).toBe('https://google.com?tags[0]=1&q=test');
+    expect(aTag?.getAttribute('target')).toBe('_blank');
+    expect(aTag?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('37. [Day 5] sanitizeHtml 深度嵌套非白名单标签在浏览器 DOMParser 环境下安全清洗且不死循环 (P1-1 修复)', () => {
+    const raw = '<div><p><section><article><b>加粗</b><span>普通</span><script>hack()</script></article></section></p></div>';
+    const cleaned = sanitizeHtml(raw);
+    expect(cleaned).toContain('<b>加粗</b>');
+    expect(cleaned).toContain('<span>普通</span>');
+    expect(cleaned).not.toContain('<script>');
+    expect(cleaned).not.toContain('<article>');
+    expect(cleaned).not.toContain('<section>');
+  });
+
+  it('38. [Day 5] 斜杠指令转换等价对齐：转 Divider / Code / Callout 属性规整与保底段落 (P2-1 修复)', () => {
+    const docId = 'doc-slash-parity';
+    const initial: BlockNode[] = [
+      { id: 'p-to-div', type: 'paragraph', content: '' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = document.querySelector('[data-block-id="p-to-div"]') as HTMLElement;
+
+    // 38a: 键入 '/fgx' 唤起并选择分割线
+    editorEl.innerText = '/fgx';
+    setCaretPosition(editorEl, 4);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+    expect(screen.getByText('分割线')).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.keyDown(editorEl, { key: 'Enter' });
+    });
+
+    // 转换为分割线后，content 必须清空，且因是最后一个块，自动在其后追加新段落
+    const blocksAfterDiv = getDocBlocks(docId);
+    expect(blocksAfterDiv.length).toBe(2);
+    expect(blocksAfterDiv[0]?.type).toBe('divider');
+    expect(blocksAfterDiv[0]?.content).toBe('');
+    expect(blocksAfterDiv[1]?.type).toBe('paragraph');
+
+    // 38b: 斜杠转提示块，自动初始化 icon 与 tone 默认属性
+    const docCalloutId = 'doc-slash-callout';
+    registerTestDoc(docCalloutId, [{ id: 'p-to-cal', type: 'paragraph', content: '' }]);
+    render(<BlockEditor documentId={docCalloutId} initialBlocks={[{ id: 'p-to-cal', type: 'paragraph', content: '' }]} />);
+    const calEl = document.querySelector('[data-block-id="p-to-cal"]') as HTMLElement;
+    calEl.innerText = '/callout';
+    setCaretPosition(calEl, 8);
+    act(() => {
+      fireEvent.input(calEl);
+    });
+    act(() => {
+      fireEvent.keyDown(calEl, { key: 'Enter' });
+    });
+    const blocksAfterCal = getDocBlocks(docCalloutId);
+    expect(blocksAfterCal[0]?.type).toBe('callout');
+    expect(blocksAfterCal[0]?.properties?.icon).toBe('💡');
+    expect(blocksAfterCal[0]?.properties?.tone).toBe('neutral');
+  });
+
+  it('39. [Day 5] 斜杠指令触发扩展：支持 NBSP (\\u00A0) 空格与中文输入法顿号 (、) 唤起 (P2-2 修复)', () => {
+    const docId = 'doc-slash-nbsp-pause';
+    const initial: BlockNode[] = [
+      { id: 'p-nbsp', type: 'paragraph', content: '' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = document.querySelector('[data-block-id="p-nbsp"]') as HTMLElement;
+
+    // 39a: 文字 + NBSP (\u00A0) + /dm 触发
+    editorEl.innerText = '前置文字\u00a0/dm';
+    setCaretPosition(editorEl, 9);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+    expect(screen.getByRole('menu', { name: '快捷块类型选择' })).toBeInTheDocument();
+    expect(screen.getByText('代码块')).toBeInTheDocument();
+
+    // 39b: 中文顿号 '、todo' 触发待办
+    editorEl.innerText = '、todo';
+    setCaretPosition(editorEl, 5);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+    expect(screen.getByRole('menu', { name: '快捷块类型选择' })).toBeInTheDocument();
+    expect(screen.getByText('待办清单')).toBeInTheDocument();
+  });
+
+  it('40. [Day 5] 光标导航键移动自动检测与脱离关闭斜杠菜单 (P2-4 修复)', () => {
+    const docId = 'doc-slash-cursor-move';
+    const initial: BlockNode[] = [
+      { id: 'p-move', type: 'paragraph', content: '' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const editorEl = document.querySelector('[data-block-id="p-move"]') as HTMLElement;
+
+    // 1. 输入 /code 唤起菜单
+    editorEl.innerText = '/code';
+    setCaretPosition(editorEl, 5);
+    act(() => {
+      fireEvent.input(editorEl);
+    });
+    expect(screen.getByRole('menu', { name: '快捷块类型选择' })).toBeInTheDocument();
+
+    // 2. 模拟光标移动至行首 (offset 0，脱离 / 范围) 并触发 keyUp
+    setCaretPosition(editorEl, 0);
+    act(() => {
+      fireEvent.keyUp(editorEl, { key: 'Home' });
+    });
+
+    // 菜单应当自动关闭销毁
+    expect(screen.queryByRole('menu', { name: '快捷块类型选择' })).toBeNull();
+  });
+
+  // ==========================================
+  // Day 6: 块级拖拽重排与批量操作集成测试 (Tests 41-46)
+  // ==========================================
+
+  it('41. [Day 6] 6-dot 悬浮手柄 (Grip Handle) 渲染、可拖拽属性与无障碍标签', () => {
+    const docId = 'doc-day6-grip';
+    const initial: BlockNode[] = [
+      { id: 'b-p1', type: 'paragraph', content: '第一段' },
+      { id: 'b-h1', type: 'heading1', content: '一级标题' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+    expect(handles.length).toBe(2);
+
+    const firstHandle = handles[0];
+    expect(firstHandle).toHaveAttribute('draggable', 'true');
+    expect(firstHandle).toHaveAttribute('aria-label', '拖拽重排或点击选中');
+    expect(firstHandle).toHaveAttribute('data-grip-id', 'b-p1');
+  });
+
+  it('42. [Day 6] 单块 HTML5 拖拽重排 (Drag & Drop) 流程与文档树状态同步', () => {
+    const docId = 'doc-day6-dnd';
+    const initial: BlockNode[] = [
+      { id: 'b-d1', type: 'paragraph', content: '段落 A' },
+      { id: 'b-d2', type: 'paragraph', content: '段落 B' },
+      { id: 'b-d3', type: 'paragraph', content: '段落 C' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+    const handleA = handles[0]; // b-d1
+
+    const wrappers = document.querySelectorAll('[data-block-wrapper-id]');
+    const wrapperC = wrappers[2] as HTMLElement; // b-d3
+
+    // 模拟拖拽起始
+    const dataTransfer = {
+      setData: vi.fn(),
+      getData: vi.fn(),
+      effectAllowed: '',
+      dropEffect: '',
+    };
+
+    act(() => {
+      fireEvent.dragStart(handleA, { dataTransfer });
+    });
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'b-d1');
+
+    // 模拟拖拽经过 b-d3 (clientY 较大，触发 'bottom')
+    act(() => {
+      fireEvent.dragOver(wrapperC, {
+        clientY: 200,
+        dataTransfer,
+      });
+    });
+
+    // 模拟放置于 b-d3 下方
+    act(() => {
+      fireEvent.drop(wrapperC, { dataTransfer });
+    });
+
+    // 验证块顺序变更：b-d1 移动到 b-d3 之后 -> [b-d2, b-d3, b-d1]
+    const nextWrappers = document.querySelectorAll('[data-block-wrapper-id]');
+    expect(nextWrappers[0].getAttribute('data-block-wrapper-id')).toBe('b-d2');
+    expect(nextWrappers[1].getAttribute('data-block-wrapper-id')).toBe('b-d3');
+    expect(nextWrappers[2].getAttribute('data-block-wrapper-id')).toBe('b-d1');
+
+    // 验证 Store 同步
+    const storeBlocks = useWorkspaceStore.getState().documents[docId]?.blocks ?? [];
+    expect(storeBlocks.map((b) => b.id)).toEqual(['b-d2', 'b-d3', 'b-d1']);
+  });
+
+  it('43. [Day 6] 6-dot 手柄点击与 Shift + Click 连续范围多选 (Range Selection)', () => {
+    const docId = 'doc-day6-selection';
+    const initial: BlockNode[] = [
+      { id: 'b-s1', type: 'paragraph', content: 'Item 1' },
+      { id: 'b-s2', type: 'paragraph', content: 'Item 2' },
+      { id: 'b-s3', type: 'paragraph', content: 'Item 3' },
+      { id: 'b-s4', type: 'paragraph', content: 'Item 4' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+
+    // 1. 点击第一块手柄，单选 b-s1
+    act(() => {
+      fireEvent.click(handles[0]);
+    });
+    expect(document.querySelector('[data-block-wrapper-id="b-s1"]')).toHaveAttribute(
+      'data-selected',
+      'true'
+    );
+    expect(document.querySelector('[data-block-wrapper-id="b-s2"]')).not.toHaveAttribute(
+      'data-selected'
+    );
+
+    // 2. 按住 Shift 点击第三块手柄，范围多选 [b-s1, b-s2, b-s3]
+    act(() => {
+      fireEvent.click(handles[2], { shiftKey: true });
+    });
+
+    expect(document.querySelector('[data-block-wrapper-id="b-s1"]')).toHaveAttribute(
+      'data-selected',
+      'true'
+    );
+    expect(document.querySelector('[data-block-wrapper-id="b-s2"]')).toHaveAttribute(
+      'data-selected',
+      'true'
+    );
+    expect(document.querySelector('[data-block-wrapper-id="b-s3"]')).toHaveAttribute(
+      'data-selected',
+      'true'
+    );
+    expect(document.querySelector('[data-block-wrapper-id="b-s4"]')).not.toHaveAttribute(
+      'data-selected'
+    );
+
+    // 3. 验证 BatchActionBar 浮层显现并展示 3 个块已选
+    expect(screen.getByRole('toolbar', { name: '批量块操作工具栏' })).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('个块已选')).toBeInTheDocument();
+
+    // 4. 按 Escape 取消选区
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+    expect(document.querySelector('[data-block-wrapper-id="b-s1"]')).not.toHaveAttribute(
+      'data-selected'
+    );
+    expect(screen.queryByRole('toolbar', { name: '批量块操作工具栏' })).toBeNull();
+  });
+
+  it('44. [Day 6] 批量选中多块后按 Backspace / Delete 批量删除', () => {
+    const docId = 'doc-day6-batch-delete';
+    const initial: BlockNode[] = [
+      { id: 'b-del1', type: 'paragraph', content: 'Keep 1' },
+      { id: 'b-del2', type: 'paragraph', content: 'Delete A' },
+      { id: 'b-del3', type: 'paragraph', content: 'Delete B' },
+      { id: 'b-del4', type: 'paragraph', content: 'Keep 2' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+
+    // 选中 b-del2 到 b-del3
+    act(() => {
+      fireEvent.click(handles[1]);
+    });
+    act(() => {
+      fireEvent.click(handles[2], { shiftKey: true });
+    });
+
+    // 触发 Backspace 批量删除
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Backspace' });
+    });
+
+    // 验证 b-del2 与 b-del3 已被彻底移除，保留 b-del1 与 b-del4
+    const remaining = document.querySelectorAll('[data-block-wrapper-id]');
+    expect(remaining.length).toBe(2);
+    expect(remaining[0].getAttribute('data-block-wrapper-id')).toBe('b-del1');
+    expect(remaining[1].getAttribute('data-block-wrapper-id')).toBe('b-del4');
+
+    // 验证 Store 同步
+    const storeBlocks = useWorkspaceStore.getState().documents[docId]?.blocks ?? [];
+    expect(storeBlocks.map((b) => b.id)).toEqual(['b-del1', 'b-del4']);
+  });
+
+  it('45. [Day 6] 拖拽排序与批量操作完整接入 Undo/Redo 历史栈', () => {
+    const docId = 'doc-day6-history';
+    const initial: BlockNode[] = [
+      { id: 'b-h1', type: 'paragraph', content: 'A' },
+      { id: 'b-h2', type: 'paragraph', content: 'B' },
+      { id: 'b-h3', type: 'paragraph', content: 'C' },
+    ];
+    registerTestDoc(docId, initial);
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+    const wrappers = document.querySelectorAll('[data-block-wrapper-id]');
+
+    // 1. 拖拽 A 到 C 后面 -> [B, C, A]
+    const dataTransfer = { setData: vi.fn(), getData: vi.fn() };
+    act(() => {
+      fireEvent.dragStart(handles[0], { dataTransfer });
+    });
+    act(() => {
+      fireEvent.dragOver(wrappers[2], { clientY: 200, dataTransfer });
+    });
+    act(() => {
+      fireEvent.drop(wrappers[2], { dataTransfer });
+    });
+
+    expect(
+      Array.from(document.querySelectorAll('[data-block-wrapper-id]')).map((el) =>
+        el.getAttribute('data-block-wrapper-id')
+      )
+    ).toEqual(['b-h2', 'b-h3', 'b-h1']);
+
+    // 2. 触发 Ctrl+Z 撤销，恢复为 [A, B, C]
+    const editor = document.querySelector('[data-block-id="b-h1"]') as HTMLElement;
+    act(() => {
+      fireEvent.keyDown(editor, { key: 'z', ctrlKey: true });
+    });
+
+    expect(
+      Array.from(document.querySelectorAll('[data-block-wrapper-id]')).map((el) =>
+        el.getAttribute('data-block-wrapper-id')
+      )
+    ).toEqual(['b-h1', 'b-h2', 'b-h3']);
+
+    // 3. 触发 Ctrl+Y 重做，再次变为 [B, C, A]
+    act(() => {
+      fireEvent.keyDown(editor, { key: 'y', ctrlKey: true });
+    });
+
+    expect(
+      Array.from(document.querySelectorAll('[data-block-wrapper-id]')).map((el) =>
+        el.getAttribute('data-block-wrapper-id')
+      )
+    ).toEqual(['b-h2', 'b-h3', 'b-h1']);
+  });
+
+  it('46. [Day 6] 多块批量复制 (Batch Copy) Markdown 格式输出与工具栏交互', () => {
+    const docId = 'doc-day6-copy';
+    const initial: BlockNode[] = [
+      { id: 'b-cp1', type: 'heading1', content: '标题一' },
+      { id: 'b-cp2', type: 'todo', content: '已完成任务', properties: { checked: true } },
+    ];
+    registerTestDoc(docId, initial);
+
+    // Mock navigator.clipboard.writeText
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(<BlockEditor documentId={docId} initialBlocks={initial} />);
+
+    const handles = screen.getAllByTestId('grip-handle');
+
+    // 选中两块
+    act(() => {
+      fireEvent.click(handles[0]);
+    });
+    act(() => {
+      fireEvent.click(handles[1], { shiftKey: true });
+    });
+
+    // 点击 BatchActionBar 中的“复制”按钮
+    const copyBtn = screen.getByTitle('复制所选块的 Markdown 文本 (Ctrl+C)');
+    act(() => {
+      fireEvent.click(copyBtn);
+    });
+
+    expect(writeTextMock).toHaveBeenCalled();
+    const copiedText = writeTextMock.mock.calls[0][0];
+    expect(copiedText).toContain('# 标题一');
+    expect(copiedText).toContain('- [x] 已完成任务');
   });
 });
