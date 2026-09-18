@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-09-16，处于 **Sprint 1，Day 1 至 Day 6 已圆满完成，Day 7 待开始**（6 / 35，约 17%）。
+截至 2026-09-17，**Sprint 1 (Day 1 至 Day 7: 脚手架与核心编辑器) 已 100% 圆满交付收官**（7 / 35，20%），即将开启 **Sprint 2 (多维数据库引擎与三重视图)**。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -58,12 +58,17 @@
   - **6-dot 悬浮手柄**：在 `BlockItem.tsx` 交付可拖拽 `GripVertical` 抓手（`draggable={true}`，`cursor-grab`），悬浮或选中时显示，具备无障碍属性与测试属性隔离。
   - **拖拽重排引擎**：基于 HTML5 Drag and Drop API 与 `reorderBlocks` 纯函数算法，支持单块与多块连续/非连续整体拖拽，动态计算目标块上下插入指示线 (Drop Indicator)，单次原子化提交 Undo/Redo 历史栈。
   - **批量多选与操作**：支持普通点击单选、Shift+Click 连续区间选择 (`getBlocksRange`)、Ctrl/Cmd 增量多选，选区呈现淡蓝色高亮外框；交付 `BatchActionBar.tsx` 底部操作条，支持一键 Backspace/Delete 批量删除（清空后保底默认段落）、Ctrl+C 批量 Markdown 复制、Escape 取消选区。
-  - **全量自动化验证**：Vitest 真实组件测试扩充至 **46 项全部通过**，新增 `scripts/verify-day6.mjs` 覆盖 6 大纯函数测试集全部通过，`verify:day2` ~ `verify:day6` 回归全部通过，TypeScript 与 Vite 生产打包零报错。
+  - **全量自动化验证**：Vitest 真实组件测试扩充至 46 项全部通过，新增 `scripts/verify-day6.mjs` 覆盖 6 大纯函数测试集全部通过，`verify:day2` ~ `verify:day6` 回归全部通过，TypeScript 与 Vite 生产打包零报错。
+- **Day 7 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结**：
+  - **IndexedDB 版本化快照**：建立 `mc_workspace_db` 对象存储与版本化 schema (`WorkspaceSnapshot` v1)；冷启动异步 Hydration 先读取校验快照再开放编辑，无快照时落入默认示例数据，彻底防止初始示例覆盖用户本地修改。
+  - **500ms 防抖自动保存与容错降级**：页面增删改、块更新、主题与侧边栏变动防抖自动持久化；顶栏 Navbar 呈现响应式状态徽标（`已保存本地` / `保存中...` / `存储降级` / `离线就绪`）；存储受限或报错时优雅降级为纯内存编辑，保障非阻塞操作。
+  - **页面树完整性与级联删除**：交付 `cascadeDeletePage` 算法，递归级联删除父页面与其所有嵌套后代，根除孤立 `parentId` 残留；删除激活页时智能安全回退至存活父级或顶级页面；删除弹窗明确提示子页面总数。
+  - **全量自动化验证与阶段收官**：Vitest 真实组件测试扩充至 **52 项全部通过 (0 warnings / 0 errors)**，新增 `scripts/verify-day7.mjs` 覆盖 5 大测试集通过，`verify:day2` ~ `verify:day7` 全套验收脚本全部通过，TypeScript 零错误，Vite 生产构建成功。
 
-## 🎯 Day 7 计划：本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结
+## 🎯 下一阶段：Sprint 2 (多维数据库引擎与三重视图，Day 8 - 14)
 
-1. 本地状态即时自动保存 (IndexedDB)。
-2. 页面级联删除逻辑完善与 Sprint 1 整体编辑体验调优与代码审查。
+- **Day 8**：多维数据库 Schema 设计与底层数据层 (Database, Column/Property, Row/Item, Cell)。
+- **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -75,7 +80,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（46 项全部通过）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（52 项全部通过，0 警告 0 报错）。
+- 执行 `npm run verify:day7` 运行 Day 7 本地离线持久化与数据完整性验收。
 - 执行 `npm run verify:day6` 运行 Day 6 块级拖拽重排与批量操作验收。
 - 执行 `npm run verify:day5` 运行 Day 5 斜杠指令状态机、拼音算法、选区与安全清洗验收。
 - 执行 `npm run verify:day4` 运行 Day 4 代码块、引用块与提示块验收。
@@ -87,6 +93,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 1 - Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 2 - Day 8: 多维数据库 Schema 设计与底层数据层]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

@@ -5,6 +5,10 @@ import {
   Users,
   Search,
   Plus,
+  Check,
+  Loader2,
+  HardDrive,
+  AlertTriangle,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { ThemeToggle } from '../common/ThemeToggle';
@@ -21,6 +25,8 @@ export const Navbar: React.FC = () => {
     toggleFavorite,
     createPage,
     setIsSearchOpen,
+    storageStatus,
+    storageError,
   } = useWorkspaceStore();
 
   const activeDoc = documents[activePageId];
@@ -69,6 +75,61 @@ export const Navbar: React.FC = () => {
 
       {/* 右侧：操作项与状态 */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
+        {/* 本地持久化状态指示 */}
+        <div
+          title={
+            storageStatus === 'saved'
+              ? '本地数据已保存至 IndexedDB'
+              : storageStatus === 'saving'
+              ? '正在自动保存至本地...'
+              : storageStatus === 'degraded'
+              ? `本地存储受限，当前使用纯内存模式: ${storageError || '刷新后修改将丢失'}`
+              : storageStatus === 'error'
+              ? `快照损坏或存储异常: ${storageError || '数据读取失败，已暂停自动保存以保护数据'}`
+              : '准备就绪'
+          }
+          className={cn(
+            'flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors select-none',
+            storageStatus === 'saved' &&
+              'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+            storageStatus === 'saving' &&
+              'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            storageStatus === 'degraded' &&
+              'bg-orange-500/15 text-orange-600 dark:text-orange-400',
+            storageStatus === 'error' &&
+              'bg-red-500/15 text-red-600 dark:text-red-400',
+            (storageStatus === 'idle' || storageStatus === 'loading') &&
+              'bg-black/5 dark:bg-white/10 text-text-muted-light dark:text-text-muted-dark'
+          )}
+        >
+          {storageStatus === 'saving' ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>保存中...</span>
+            </>
+          ) : storageStatus === 'saved' ? (
+            <>
+              <Check className="w-3 h-3" />
+              <span>已保存本地</span>
+            </>
+          ) : storageStatus === 'error' ? (
+            <>
+              <AlertTriangle className="w-3 h-3" />
+              <span>存储异常</span>
+            </>
+          ) : storageStatus === 'degraded' ? (
+            <>
+              <AlertTriangle className="w-3 h-3" />
+              <span>存储降级</span>
+            </>
+          ) : (
+            <>
+              <HardDrive className="w-3 h-3" />
+              <span>离线就绪</span>
+            </>
+          )}
+        </div>
+
         {/* 协同在线感知状态 */}
         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium mr-1">
           <Users className="w-3 h-3" />

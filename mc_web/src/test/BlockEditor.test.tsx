@@ -5,6 +5,17 @@ import { DocumentPage } from '../pages/DocumentPage';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { BlockNode, DocumentItem } from '../types/document';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
+import { Navbar } from '../components/layout/Navbar';
+import { cascadeDeletePage, getDescendantPageIds } from '../utils/workspaceUtils';
+import {
+  WorkspaceSnapshot,
+  validateWorkspaceSnapshot,
+  normalizeSnapshot,
+  MemoryStorage,
+  StorageAdapter,
+  StorageCorruptError,
+  StorageReadError,
+} from '../utils/workspaceStorage';
 
 // 辅助函数：在 contenteditable 元素中定位光标
 function setCaretPosition(el: HTMLElement, offset: number) {
@@ -62,7 +73,9 @@ describe('BlockEditor Component & Store Integration', () => {
   });
 
   afterEach(() => {
-    vi.runOnlyPendingTimers();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
     vi.useRealTimers();
   });
 
@@ -1321,10 +1334,10 @@ describe('BlockEditor Component & Store Integration', () => {
     range.setStart(textNode, 0);
     range.setEnd(textNode, 6);
     const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
 
     act(() => {
+      sel?.removeAllRanges();
+      sel?.addRange(range);
       document.dispatchEvent(new Event('selectionchange'));
     });
 
@@ -1362,10 +1375,10 @@ describe('BlockEditor Component & Store Integration', () => {
     range.setStart(textNode, 5);
     range.setEnd(textNode, 11);
     const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
 
     act(() => {
+      sel?.removeAllRanges();
+      sel?.addRange(range);
       document.dispatchEvent(new Event('selectionchange'));
     });
 
@@ -1773,11 +1786,412 @@ describe('BlockEditor Component & Store Integration', () => {
     const copyBtn = screen.getByTitle('复制所选块的 Markdown 文本 (Ctrl+C)');
     act(() => {
       fireEvent.click(copyBtn);
+      vi.advanceTimersByTime(2100);
     });
 
     expect(writeTextMock).toHaveBeenCalled();
     const copiedText = writeTextMock.mock.calls[0][0];
     expect(copiedText).toContain('# 标题一');
     expect(copiedText).toContain('- [x] 已完成任务');
+  });
+
+  it('47. [Day 7] cascadeDeletePage 递归级联删除页面及其所有嵌套子孙页面，消除孤立 parentId 并自愈激活页', () => {
+    const docs: Record<string, DocumentItem> = {
+      'root-1': {
+        id: 'root-1',
+        title: '根页面 1',
+        parentId: null,
+        createdAt: 100,
+        updatedAt: 100,
+        blocks: [{ id: 'b1', type: 'paragraph', content: '根页面 1' }],
+      },
+      'child-1': {
+        id: 'child-1',
+        title: '子页面 1',
+        parentId: 'root-1',
+        createdAt: 101,
+        updatedAt: 101,
+        blocks: [{ id: 'b2', type: 'paragraph', content: '子页面 1' }],
+      },
+      'grandchild-1': {
+        id: 'grandchild-1',
+        title: '孙页面 1',
+        parentId: 'child-1',
+        createdAt: 102,
+        updatedAt: 102,
+        blocks: [{ id: 'b3', type: 'paragraph', content: '孙页面 1' }],
+      },
+      'child-2': {
+        id: 'child-2',
+        title: '子页面 2',
+        parentId: 'root-1',
+        createdAt: 103,
+        updatedAt: 103,
+        blocks: [{ id: 'b4', type: 'paragraph', content: '子页面 2' }],
+      },
+      'root-2': {
+        id: 'root-2',
+        title: '根页面 2',
+        parentId: null,
+        createdAt: 104,
+        updatedAt: 104,
+        blocks: [{ id: 'b5', type: 'paragraph', content: '根页面 2' }],
+      },
+    };
+
+    // 1. 验证 getDescendantPageIds
+    const root1Descendants = getDescendantPageIds(docs, 'root-1');
+    expect(root1Descendants).toEqual(expect.arrayContaining(['child-1', 'grandchild-1', 'child-2']));
+    expect(root1Descendants.length).toBe(3);
+
+    // 2. 级联删除 child-1，此时 activePageId 为 grandchild-1
+    const result1 = cascadeDeletePage(docs, 'child-1', 'grandchild-1');
+    expect(result1.deletedIds).toEqual(expect.arrayContaining(['child-1', 'grandchild-1']));
+    expect(result1.documents['child-1']).toBeUndefined();
+    expect(result1.documents['grandchild-1']).toBeUndefined();
+    expect(result1.documents['root-1']).toBeDefined();
+    expect(result1.documents['child-2']).toBeDefined();
+    expect(result1.documents['root-2']).toBeDefined();
+
+    // 激活页安全回退到 parentId (root-1)
+    expect(result1.nextActivePageId).toBe('root-1');
+
+    // 3. 验证没有任何残留节点的 parentId 指向已被删除的 child-1 或 grandchild-1
+    const remainingParentIds = Object.values(result1.documents).map((d) => d.parentId);
+    expect(remainingParentIds).not.toContain('child-1');
+    expect(remainingParentIds).not.toContain('grandchild-1');
+
+    // 4. 在 Store 中触发 deletePage，验证实际 Store 状态
+    useWorkspaceStore.setState({
+      documents: docs,
+      activePageId: 'grandchild-1',
+    });
+    useWorkspaceStore.getState().deletePage('root-1');
+    const storeDocs = useWorkspaceStore.getState().documents;
+    expect(Object.keys(storeDocs)).toEqual(['root-2']);
+    expect(useWorkspaceStore.getState().activePageId).toBe('root-2');
+  });
+
+  it('48. [Day 7] validateWorkspaceSnapshot 严格 Schema 校验与 normalizeSnapshot 容错自愈', () => {
+    // 非法快照数据校验
+    expect(validateWorkspaceSnapshot(null)).toBe(false);
+    expect(validateWorkspaceSnapshot(undefined)).toBe(false);
+    expect(validateWorkspaceSnapshot('invalid-string')).toBe(false);
+    expect(validateWorkspaceSnapshot({ version: 2 })).toBe(false); // 拒绝高于当前最大版本的快照
+    expect(validateWorkspaceSnapshot({ version: 0 })).toBe(false); // 拒绝非法非正整数版本
+    expect(validateWorkspaceSnapshot({ version: 1, workspace: null })).toBe(false);
+    expect(validateWorkspaceSnapshot({ version: 1, workspace: {}, documents: 'not-an-object' })).toBe(false);
+
+    // 合法快照校验
+    const validRaw = {
+      version: 1,
+      timestamp: Date.now(),
+      workspace: { id: 'ws-1', name: '离线工作区', icon: '📝', description: '', memberCount: 1 },
+      documents: {
+        'p-1': {
+          id: 'p-1',
+          title: '文档 1',
+          parentId: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          blocks: [
+            { id: 'b1', type: 'bulletList' as const, content: '文本', properties: { level: -5 } },
+            { id: 'b2', type: 'todo' as const, content: '待办', properties: { checked: 'true' as any } },
+          ],
+        },
+        'p-orphan': {
+          id: 'p-orphan',
+          title: '孤立文档',
+          parentId: 'non-existent-parent',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          blocks: [],
+        },
+        'p-cycle': {
+          id: 'p-cycle',
+          title: '成环文档',
+          parentId: 'p-cycle',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          blocks: [],
+        },
+      },
+      activePageId: 'p-1',
+      isSidebarCollapsed: false,
+      theme: 'dark' as const,
+    };
+    expect(validateWorkspaceSnapshot(validRaw)).toBe(true);
+
+    // normalizeSnapshot 自愈：异常属性规整、补齐 properties、孤立与循环 parentId 修复
+    const normalized = normalizeSnapshot(validRaw as any);
+    expect(normalized.version).toBe(1);
+    expect(normalized.documents['p-1']?.blocks?.[0]?.properties?.level).toBe(0);
+    expect(normalized.documents['p-1']?.blocks?.[1]?.properties?.checked).toBe(false);
+    expect(normalized.documents['p-orphan']?.parentId).toBeNull();
+    expect(normalized.documents['p-cycle']?.parentId).toBeNull();
+    expect(normalized.activePageId).toBe('p-1');
+
+    // 若 activePageId 指向不存在的页面，自动安全重定向至第一个有效页面
+    const invalidActiveRaw = {
+      ...validRaw,
+      activePageId: 'non-existent-page',
+    };
+    const healed = normalizeSnapshot(invalidActiveRaw as any);
+    expect(healed.activePageId).toBe('p-1');
+  });
+
+  it('49. [Day 7] useWorkspaceStore hydrateStore 异步水合：支持持久化存储与纯内存降级契约感知', async () => {
+    // 1. 持久化存储适配器水合：状态流转至 saved
+    const persistentStorage = new MemoryStorage(null, { isPersistent: true });
+    const testSnapshot: WorkspaceSnapshot = {
+      version: 1,
+      timestamp: Date.now(),
+      workspace: { id: 'ws-hydrated', name: '快照恢复工作区', icon: '🚀', description: '', memberCount: 1 },
+      documents: {
+        'page-hydrated': {
+          id: 'page-hydrated',
+          title: '已持久化页面',
+          parentId: null,
+          createdAt: 1000,
+          updatedAt: 1000,
+          blocks: [{ id: 'b-h1', type: 'heading1', content: '水合恢复成功' }],
+        },
+      },
+      activePageId: 'page-hydrated',
+      isSidebarCollapsed: true,
+      theme: 'dark',
+    };
+
+    await persistentStorage.save(testSnapshot);
+    useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    let state = useWorkspaceStore.getState();
+    expect(state.isHydrated).toBe(true);
+    expect(state.storageStatus).toBe('saved');
+    expect(state.storageError).toBeNull();
+    expect(state.workspace.name).toBe('快照恢复工作区');
+    expect(state.activePageId).toBe('page-hydrated');
+
+    // 2. 纯内存降级适配器 (isPersistent = false) 水合：状态流转至 degraded 并不宣称 saved
+    const memoryStorage = new MemoryStorage(null, { isPersistent: false });
+    await memoryStorage.save(testSnapshot);
+    useWorkspaceStore.getState().setStorageAdapter(memoryStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    state = useWorkspaceStore.getState();
+    expect(state.isHydrated).toBe(true);
+    expect(state.storageStatus).toBe('degraded');
+    expect(state.storageError).toContain('纯内存降级模式');
+  });
+
+  it('50. [Day 7] 防抖自动保存触发机制与状态机流转 (saving -> 500ms -> saved/degraded)', async () => {
+    // 1. 持久化适配器：saving -> 500ms -> saved
+    const persistentStorage = new MemoryStorage(null, { isPersistent: true });
+    useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('saved');
+
+    const currentActiveId = useWorkspaceStore.getState().activePageId;
+    act(() => {
+      useWorkspaceStore.getState().updatePage(currentActiveId, { title: '持久化新标题' });
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('saving');
+
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('saved');
+    const latestPersistent = await persistentStorage.load();
+    expect(latestPersistent?.documents[currentActiveId]?.title).toBe('持久化新标题');
+
+    // 2. 内存降级适配器：saving -> 500ms -> degraded
+    const memoryStorage = new MemoryStorage(null, { isPersistent: false });
+    useWorkspaceStore.getState().setStorageAdapter(memoryStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    act(() => {
+      useWorkspaceStore.getState().updatePage(currentActiveId, { title: '内存降级标题' });
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('saving');
+
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('degraded');
+  });
+
+  it('51. [Day 7] 存储损坏或异常时的写保护防御：严禁默认快照覆盖损坏数据并暂停自动保存', async () => {
+    // 构造损坏快照适配器
+    let savedCalled = false;
+    const corruptStorage: StorageAdapter = {
+      isAvailable: true,
+      isPersistent: true,
+      kind: 'indexeddb',
+      load: async () => {
+        throw new StorageCorruptError('Corrupt snapshot json in database');
+      },
+      save: async () => {
+        savedCalled = true;
+      },
+      clear: async () => {},
+    };
+
+    useWorkspaceStore.getState().setStorageAdapter(corruptStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const state = useWorkspaceStore.getState();
+    // 进入 error 状态
+    expect(state.storageStatus).toBe('error');
+    expect(state.storageError).toContain('Corrupt snapshot json');
+    // 核心安全验证：严禁保存默认快照覆盖受损数据！
+    expect(savedCalled).toBe(false);
+
+    // 验证日常自动保存被守卫拦截，不会覆盖数据
+    act(() => {
+      useWorkspaceStore.getState().updatePage(state.activePageId, { title: '错误状态下修改' });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    expect(savedCalled).toBe(false);
+    expect(useWorkspaceStore.getState().storageStatus).toBe('error');
+
+    // 同样验证 StorageReadError 存储读取错误进入 error 状态且不覆盖数据
+    const readErrStorage: StorageAdapter = {
+      isAvailable: true,
+      isPersistent: true,
+      kind: 'indexeddb',
+      load: async () => {
+        throw new StorageReadError('Transaction read aborted');
+      },
+      save: async () => {
+        savedCalled = true;
+      },
+      clear: async () => {},
+    };
+    useWorkspaceStore.getState().setStorageAdapter(readErrStorage);
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+    expect(useWorkspaceStore.getState().storageStatus).toBe('error');
+    expect(useWorkspaceStore.getState().storageError).toContain('Transaction read aborted');
+  });
+
+  it('52. [Day 7] Navbar 存储状态徽标与响应式视图状态反馈 (saved / saving / degraded / error / idle)', () => {
+    const { unmount } = render(<Navbar />);
+
+    // 1. saved 状态
+    act(() => {
+      useWorkspaceStore.setState({ storageStatus: 'saved', storageError: null });
+    });
+    expect(screen.getByText('已保存本地')).toBeDefined();
+
+    // 2. saving 状态
+    act(() => {
+      useWorkspaceStore.setState({ storageStatus: 'saving', storageError: null });
+    });
+    expect(screen.getByText('保存中...')).toBeDefined();
+
+    // 3. degraded 降级状态
+    act(() => {
+      useWorkspaceStore.setState({ storageStatus: 'degraded', storageError: '纯内存模式' });
+    });
+    expect(screen.getByText('存储降级')).toBeDefined();
+
+    // 4. error 异常状态
+    act(() => {
+      useWorkspaceStore.setState({ storageStatus: 'error', storageError: '快照损坏' });
+    });
+    expect(screen.getByText('存储异常')).toBeDefined();
+
+    // 5. idle / loading 就绪状态
+    act(() => {
+      useWorkspaceStore.setState({ storageStatus: 'idle', storageError: null });
+    });
+    expect(screen.getByText('离线就绪')).toBeDefined();
+
+    unmount();
+  });
+
+  it('53. [Day 7] getBreadcrumbs 面对循环引用 parentId 数据具备 visited 集合防护，绝不死循环', () => {
+    // 构造互为父子节点的死循环数据
+    const cyclicDocs: Record<string, DocumentItem> = {
+      'doc-cycle-1': {
+        id: 'doc-cycle-1',
+        title: '循环页 1',
+        parentId: 'doc-cycle-2',
+        createdAt: 100,
+        updatedAt: 100,
+        blocks: [],
+      },
+      'doc-cycle-2': {
+        id: 'doc-cycle-2',
+        title: '循环页 2',
+        parentId: 'doc-cycle-1',
+        createdAt: 100,
+        updatedAt: 100,
+        blocks: [],
+      },
+    };
+
+    useWorkspaceStore.setState({ documents: cyclicDocs });
+
+    // 调用 getBreadcrumbs，确保安全退出且不抛异常或无限循环
+    const crumbs = useWorkspaceStore.getState().getBreadcrumbs('doc-cycle-1');
+    expect(Array.isArray(crumbs)).toBe(true);
+    expect(crumbs.length).toBeLessThanOrEqual(2);
+  });
+
+  it('54. [Day 7] 无 IndexedDB 环境下内存降级：端到端编辑流转全程标记存储降级，绝不误报已保存本地', async () => {
+    const memoryOnlyStorage = new MemoryStorage(null, { isPersistent: false });
+    useWorkspaceStore.getState().setStorageAdapter(memoryOnlyStorage);
+
+    // 水合空内存
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    expect(useWorkspaceStore.getState().storageStatus).toBe('degraded');
+
+    // 编辑操作
+    const activeId = useWorkspaceStore.getState().activePageId;
+    act(() => {
+      useWorkspaceStore.getState().updatePage(activeId, { title: '内存模式编辑页' });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    // 自动保存完成，但依然为 degraded
+    expect(useWorkspaceStore.getState().storageStatus).toBe('degraded');
+    expect(useWorkspaceStore.getState().storageStatus).not.toBe('saved');
   });
 });

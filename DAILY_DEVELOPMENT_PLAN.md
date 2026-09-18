@@ -121,9 +121,11 @@ flowchart LR
   - 支持一键 Backspace/Delete 批量删除、Ctrl+C 批量 Markdown 复制与底部悬浮工具栏
   - 批量操作与拖拽重排完整接入 Undo/Redo 历史栈
   - Vitest 集成测试扩充至 46 项，注册 `verify:day6` 验收脚本全量通过
-- [ ] **Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结**
-  - 本地状态即时自动保存 (IndexedDB)
-  - Sprint 1 整体编辑体验调优与代码审查
+- [x] **Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结** *(已完成)*
+  - **IndexedDB 数据层**：定义版本化 schema (`WorkspaceSnapshot` v1) 与原生 Promise 封装 `IndexedDBStorage` / `MemoryStorage`；首屏异步 hydration 先载入快照，无快照时载入默认示例数据，彻底防止初始数据覆写用户本地编辑。
+  - **自动保存与容错**：对页面增删改、块更新、收藏、工作区名称、侧边栏折叠与主题变更执行 500ms 防抖持久化；顶栏新增存储状态实时反馈（`已保存本地` / `保存中...` / `存储降级` / `离线就绪`）；存储异常或受限环境下自动降级为纯内存模式，非阻塞用户正常编辑。
+  - **页面树完整性与级联删除**：交付 `cascadeDeletePage` 算法，递归级联删除页面及其所有嵌套子孙页面，根除孤立 `parentId` 残留；删除当前激活页时智能回退至父级、首个顶级或可用页面。
+  - **全量自动化验证与阶段收尾**：新增 `scripts/verify-day7.mjs` 验收脚本并在 `package.json` 注册 `verify:day7`；Vitest 扩充至 **52 项用例全部通过**，全量回归 Day 2 ~ Day 6 脚本零错误，TypeScript 零错误，Vite 生产构建成功；完成 Sprint 1 阶段总结与向 Sprint 2 多维数据库的架构交接说明。
 
 ---
 
@@ -238,22 +240,24 @@ flowchart LR
 > 💡 **使用说明**：随着每天的推进，直接修改此处的复选框 `[ ]` 为 `[x]`，并记录当天的简要备注。
 
 ### 📊 当前整体进度概览
-- **当前所处 Sprint**: **Sprint 1 (脚手架与核心编辑器)**
-- **已完成天数**: `6 / 35`
-- **总体完成度**: `17%`
+- **当前所处 Sprint**: **Sprint 1 (已圆满完成) ➔ 即将进入 Sprint 2 (多维数据库引擎与三重视图)**
+- **已完成天数**: `7 / 35`（Sprint 1 全满交付）
+- **总体完成度**: `20%`
 
 ```
-[███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 17%
+[████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 20%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 6: 块级拖拽排序与批量操作** 已圆满交付并通过全量验收！
+- **状态**: **Sprint 1 (Day 1 - 7: 脚手架与核心编辑器) 100% 圆满收尾交付！Sprint 2 (Day 8: 多维数据库 Schema 与底层数据层) 准备就绪。**
 - **成果**：
-  1. **6-dot 悬浮手柄**：在 `BlockItem.tsx` 交付可拖拽 `GripVertical` 抓手（`draggable={true}`，`cursor-grab`），支持选中态常显与悬浮显示；
-  2. **拖拽重排引擎**：在 `blockUtils.ts` 交付 `reorderBlocks` 纯函数算法，支持单块与多块连续/非连续相对次序保持，动态渲染上下放置指示线 (Drop Indicator)；
-  3. **批量多选与操作**：实现普通点击单选、Shift+Click 连续范围选择 (`getBlocksRange`)、Ctrl/Cmd 增量多选；交付 `BatchActionBar.tsx` 底部操作条，支持一键批量删除 (Backspace/Delete)、批量复制 (Ctrl+C)、取消选区 (Escape) 并接入 Undo/Redo 历史栈；
-  4. **自动化测试与构建**：新增 `scripts/verify-day6.mjs` 覆盖 6 大算法测试集全部通过，Vitest 集成测试扩充至 **46 项**全部通过，全量回归 Day 2 ~ Day 5 验收脚本，TypeScript 零错误，Vite 生产构建成功。
-- **明日聚焦**：准备启动 **Day 7: 本地离线持久化 (IndexedDB) 与 Sprint 1 阶段总结**（本地自动持久化、级联删除与整体体验调优）。
+  1. **本地离线持久化体系**：基于原生 IndexedDB 建立版本化快照仓库 (`mc_workspace_db`)，规范化 `WorkspaceSnapshot`（版本号、时间戳、工作区元信息、文档树、激活页、侧边栏与主题）；首屏异步 hydration 先载入快照，无快照时载入默认示例数据，彻底防止初始数据覆写用户本地编辑；
+  2. **非阻塞自动保存与容错降级**：实现 500ms 防抖保存机制与状态机流转（`idle` -> `saving` -> `saved` -> `degraded`），在顶栏 Navbar 提供清晰直观的本地存储徽标指示；当受限环境或配额溢出时平滑降级为纯内存编辑；
+  3. **页面树完整性与级联删除**：重构 `deletePage`，接入 `cascadeDeletePage` 递归收集并彻底剥离所有子孙后代节点，消除孤立 `parentId`；激活页被删时平滑重定向至安全页面；
+  4. **自动化测试与全量回归**：编写 `verify-day7.mjs`，Vitest 组件测试扩充至 **52 项全部通过 (0 warnings / 0 errors)**，Day 2 ~ Day 7 全套验证脚本 100% 通过，`tsc --noEmit` 零错误，生产打包构建 `npm run build` 成功。
+- **明日计划（Sprint 2 - Day 8）**：
+  1. 设计多维数据库数据模型 (Database, Column/Property, Row/Item, Cell)；
+  2. 搭建响应式 Database Store 并定义与主工作区文档树的无缝嵌入映射规范。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -440,6 +444,69 @@ flowchart LR
 - [x] 批量选中多块后，底部悬浮展示 `BatchActionBar`，支持一键复制 Markdown 与一键批量删除，按 Escape 安全取消。
 - [x] 批量删除所有块时自动保留一个空白默认段落，删除操作可 Ctrl+Z 瞬间恢复。
 - [x] Day 2 ~ Day 5 既有功能（斜杠指令、Bubble Menu、各种块类型）100% 保持无回归，全套自动化验收通过。
+
+### Day 7 实施与交付记录（2026-09-17）
+
+#### 阶段 A：页面树完整性与级联删除 (Page Tree Cascade Delete)
+- [x] 在 `src/utils/workspaceUtils.ts` 中封装 `getDescendantPageIds(documents, targetId)` 纯函数，使用广度优先遍历递归收集目标页面的所有直接与间接子孙 ID。
+- [x] 实现 `cascadeDeletePage(documents, targetId, currentActivePageId)` 纯函数：
+  - 连带收集目标及其全部后代节点执行原子化批量剔除，消除孤立 `parentId` 残留；
+  - 智能安全重定向激活页：若当前激活页在被删子树内，优先回退到原父页面（若其仍存活），其次回退到第一个顶级页面，最后回退到任意剩余首个页面，杜绝无效空引用。
+- [x] 在 `PageTreeItem.tsx` 删除确认弹窗中接入后代计数提示（如“此页面包含 N 个子页面，删除将连同子页面一并彻底删除”），并支持键盘 Enter / Escape 快捷操作。
+- [x] 重构 `useWorkspaceStore.ts` 的 `deletePage` 方法，彻底接入 `cascadeDeletePage` 并触发即时本地快照同步。
+
+#### 阶段 B：本地持久化数据契约与快照存储引擎 (IndexedDB Storage Engine)
+- [x] 在 `src/utils/workspaceStorage.ts` 中定义版本化快照契约 `WorkspaceSnapshot`（`version: 1`, `timestamp`, `workspace`, `documents`, `activePageId`, `isSidebarCollapsed`, `theme`）。
+- [x] 实现快照纯函数数据校验与自愈引擎：
+  - `validateWorkspaceSnapshot(data)`: 严格校验版本号、对象形态与必要字段结构；
+  - `normalizeSnapshot(snapshot)`: 深度遍历快照文档集，对所有 Block 节点执行 `normalizeBlock` 规整（level、checked、language、tone 等），自愈失效的 `activePageId`。
+- [x] 抽象 `StorageAdapter` 接口，交付原生 Promise 封装实现：
+  - `IndexedDBStorage`: 管理 `mc_workspace_db` 数据库与 `workspace_snapshots` 对象仓库，实现原子化 `load()`、`save()` 与 `clear()`；
+  - `MemoryStorage`: 纯内存深拷贝适配器，用于无 IndexedDB 宿主环境、Node.js 验收脚本与只读降级环境。
+
+#### 阶段 C：Zustand Store 异步水合、防抖保存与状态指示 (Hydration & Auto-save)
+- [x] 在 `useWorkspaceStore.ts` 中扩展持久化状态：
+  - `isHydrated: boolean`、`storageStatus: 'idle' | 'loading' | 'saved' | 'saving' | 'error' | 'degraded'`、`storageError: string | null`；
+  - `hydrateStore()`: 应用冷启动时优先从本地存储装载快照，校验并自愈后恢复至 Store；若无快照则初始化默认示例数据并立即落地持久化；
+  - `saveToStorage(immediate)`: 支持 500ms 防抖保存，在页面增删改、块更新、收藏、重命名、侧边栏折叠与主题切换时自动触发。
+- [x] 在 `App.tsx` 挂载时触发 `hydrateStore()`，并在水合完成前呈现轻量平滑骨架过渡，彻底杜绝默认数据闪烁与覆盖本地修改。
+- [x] 在 `Navbar.tsx` 右侧嵌入存储状态响应式微型徽标（`已保存本地` / `保存中...` / `存储降级` / `离线就绪`），鼠标悬停提供详细状态 Tooltip。
+- [x] 异常容灾保障：当 IndexedDB 抛出异常或配额溢出时，非阻塞优雅降级为 `degraded` 状态，内存文档编辑与交互完全不受影响。
+
+#### 阶段 D：测试套件、全量回归与 Sprint 1 阶段收尾
+- [x] 新增 `scripts/verify-day7.mjs` 并在 `package.json` 中登记 `verify:day7` 验收脚本，全量覆盖级联删除与孤立 parentId 根除、快照 Schema 校验、Block 深度规整、存储适配器生命周期、存储异常降级 5 大核心测试集全部通过。
+- [x] 在 `src/test/BlockEditor.test.tsx` 扩充 Day 7 专属单测（用例 47 ~ 52），断言级联删除与树自愈、快照 Schema 校验与清洗、Store 异步水合、防抖保存与状态流转、存储降级保护、Navbar 状态徽标渲染。
+- [x] 全链路验证通过：
+  - `npm test`：52/52 全部通过，0 warnings / 0 errors；
+  - `npm run verify:day7`：通过 (Exit Code 0)；
+  - `npm run verify:day2` ~ `npm run verify:day6`：全量回归 100% 通过 (Exit Code 0)；
+  - `npx tsc --noEmit`：TypeScript 静态类型检查零错误；
+  - `npm run build`：生产打包构建顺利完成 (Exit Code 0)。
+
+#### Day 7 验收清单（已完成逐项核查）
+- [x] 首次访问无本地快照时自动载入初始化工作区并落地 IndexedDB；二次访问及刷新时准确恢复此前编辑的文档内容、激活页、侧边栏及主题。
+- [x] 在页面内编辑文本、增删块、调整标题、切换主题时，顶栏状态准确在 `保存中...` 与 `已保存本地` 间响应流转，防抖 500ms 后静默完成。
+- [x] 删除含有多层嵌套子页面的父页面时，弹出包含准确子页面数量的确认弹窗；确认后连同所有子代完全级联删除，页面树中绝无孤立孤儿页面；若被删页面为当前激活页，安全回退至存活父级或顶级页面。
+- [x] 模拟存储配额满或抛出异常时，顶栏展示橙色“存储降级”状态并记录错误信息，用户在内存中继续创建和编辑页面完全不发生报错崩溃。
+- [x] Day 2 ~ Day 6 既有功能（轻量块树、常用块类型、列表缩进防跳级、代码高亮、斜杠指令、选区浮动栏、拖拽重排、批量删除）100% 保持无回归。
+
+---
+
+### Sprint 1 阶段总结与向 Sprint 2 演进交付说明
+
+#### 1. Sprint 1 阶段交付全景
+Sprint 1（脚手架与核心编辑器）已圆满完成 7 天的精细化迭代与高质量交付：
+- **基础设施与工作区**：Notion 风格工作区、多级无限层级页面树、全局快速搜索 (Ctrl+K)、明暗主题响应；
+- **自主块树编辑器引擎**：自主研发 `mc-block-engine`，以标准 `BlockNode` 为基础单元，彻底规避 Web Components 隔离弊端与富文本全文树陷阱；
+- **丰富块类型矩阵**：段落、一级至三级标题、分割线、无序列表、有序列表（动态递增计算）、待办清单（划线交互）、代码块（Prism.js Token 高亮与 14 种语言）、引用块、提示块（12 Emoji + 5 色彩基调）；
+- **高级流式与批量交互**：拼音/全拼/英文多模态斜杠指令 (`/`)、选区浮动工具栏 (Bubble Menu)、6-dot 悬浮手柄、HTML5 拖拽上下指示线重排、多块连续/非连续多选、一键批量删除与 Markdown 复制，全链路接入 Undo/Redo 本地历史栈；
+- **离线持久化与数据完整性**：原生 IndexedDB 版本化存储快照、首屏水合保护、500ms 防抖保存、页面级联删除防孤立 parentId、受限环境降级容灾；
+- **工程化质量保障**：全套 52 项 Vitest 真实组件测试（0 警告、0 报错）、6 大专项自动化验收脚本、TypeScript 零错误、生产构建随时就绪。
+
+#### 2. 向 Sprint 2 (多维数据库引擎与三重视图) 演进交接说明
+- **数据结构扩展规范**：Sprint 2 将引入 `Database`、`Column/Property`、`Row/Item`、`Cell` 模型。在块树中，多维表格将作为一个顶级的特殊块类型（`type: 'database'` 或以独立子页面形式挂载），其属性将存放在 Block properties 或独立 Database 实体中；
+- **持久化契约兼容**：`WorkspaceSnapshot` 已具备 `version: 1` 版本号标记，后续在 Sprint 2 引入多维数据库 Schema 时可无缝平滑升级至 `version: 2` 并由迁移纯函数进行向下兼容；
+- **协同就绪性**：目前所有 Block 操作均为不可变原子操作与显式属性清洗，完全契合后续 Sprint 3 中接入 Yjs `Y.Array<Y.Map>` 的映射要求。
 
 ---
 

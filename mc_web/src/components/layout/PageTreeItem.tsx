@@ -3,16 +3,14 @@ import { ChevronRight, ChevronDown, Plus, Trash2, Star } from 'lucide-react';
 import { DocumentItem } from '../../types/document';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { cn } from '../../utils/cn';
+import { getDescendantPageIds } from '../../utils/workspaceUtils';
 
 interface PageTreeItemProps {
   document: DocumentItem;
-  level?: number;
+  level: number;
 }
 
-export const PageTreeItem: React.FC<PageTreeItemProps> = ({
-  document,
-  level = 0,
-}) => {
+export const PageTreeItem: React.FC<PageTreeItemProps> = ({ document, level }) => {
   const {
     documents,
     activePageId,
@@ -24,12 +22,12 @@ export const PageTreeItem: React.FC<PageTreeItemProps> = ({
 
   const [isExpanded, setIsExpanded] = useState(true);
 
+  const isActive = activePageId === document.id;
   // 查找当前页面的直接子页面
   const childDocs = Object.values(documents).filter(
     (doc) => doc.parentId === document.id
   );
   const hasChildren = childDocs.length > 0;
-  const isActive = activePageId === document.id;
 
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -44,7 +42,12 @@ export const PageTreeItem: React.FC<PageTreeItemProps> = ({
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`确定要删除页面 "${document.title || '无标题页面'}" 吗？`)) {
+    const descendants = getDescendantPageIds(documents, document.id);
+    const msg =
+      descendants.length > 0
+        ? `确定要删除页面 "${document.title || '无标题页面'}" 及其 ${descendants.length} 个子页面吗？此操作将级联删除所有子孙内容。`
+        : `确定要删除页面 "${document.title || '无标题页面'}" 吗？`;
+    if (confirm(msg)) {
       deletePage(document.id);
     }
   };

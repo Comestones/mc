@@ -1378,6 +1378,14 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       link: false,
     },
   });
+  const bubbleMenuStateRef = useRef(bubbleMenuState);
+  bubbleMenuStateRef.current = bubbleMenuState;
+
+  const closeBubbleMenu = useCallback(() => {
+    if (bubbleMenuStateRef.current.isOpen) {
+      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+    }
+  }, []);
 
   const updateBubbleMenu = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -1391,7 +1399,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       ) {
         return;
       }
-      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      closeBubbleMenu();
       return;
     }
 
@@ -1404,14 +1412,14 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       ) {
         return;
       }
-      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      closeBubbleMenu();
       return;
     }
 
     const range = sel.getRangeAt(0);
     const editorContainer = editorContainerRef.current;
     if (!editorContainer || !editorContainer.contains(range.commonAncestorContainer)) {
-      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      closeBubbleMenu();
       return;
     }
 
@@ -1423,12 +1431,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     )?.closest('[data-block-id]') as HTMLElement | null;
 
     if (!blockEl) {
-      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      closeBubbleMenu();
       return;
     }
 
     if (blockEl.closest('[data-block-code-id]')) {
-      setBubbleMenuState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      closeBubbleMenu();
       return;
     }
 

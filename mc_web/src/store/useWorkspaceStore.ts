@@ -2,6 +2,21 @@ import { create } from 'zustand';
 import { DocumentItem, BreadcrumbItem, BlockNode } from '../types/document';
 import { WorkspaceMeta } from '../types/workspace';
 import { normalizeBlock } from '../utils/blockUtils';
+import { cascadeDeletePage } from '../utils/workspaceUtils';
+import {
+  createWorkspaceStorage,
+  StorageAdapter,
+  WorkspaceSnapshot,
+  SNAPSHOT_SCHEMA_VERSION,
+} from '../utils/workspaceStorage';
+
+export type StorageStatus =
+  | 'idle'
+  | 'loading'
+  | 'saved'
+  | 'saving'
+  | 'error'
+  | 'degraded';
 
 interface WorkspaceState {
   // 工作区信息
@@ -33,6 +48,15 @@ interface WorkspaceState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+
+  // Day 7: 本地离线持久化与 Hydration
+  isHydrated: boolean;
+  storageStatus: StorageStatus;
+  storageError: string | null;
+  hydrateStore: () => Promise<void>;
+  saveToStorage: (immediate?: boolean) => Promise<void>;
+  resetStorageToDefault: () => Promise<void>;
+  setStorageAdapter: (adapter: StorageAdapter) => void;
 }
 
 const INITIAL_PAGES: Record<string, DocumentItem> = {
@@ -155,6 +179,68 @@ const INITIAL_PAGES: Record<string, DocumentItem> = {
   }
 };
 
+let storageInstance: StorageAdapter = createWorkspaceStorage();
+let autoSaveTimer: NodeJS.Timeout | null = null;
+
+function scheduleAutoSave(
+  get: () => WorkspaceState,
+  set: (partial: Partial<WorkspaceState> | ((state: WorkspaceState) => Partial<WorkspaceState>)) => void,
+  immediate = false
+) {
+  const current = get();
+  if (!current.isHydrated) return;
+  // 快照损坏或处于异常状态时暂停自动保存，防止覆盖受损数据
+  if (current.storageStatus === 'error') return;
+
+  const doSave = async () => {
+    const state = get();
+    if (state.storageStatus === 'error') return;
+    const snapshot: WorkspaceSnapshot = {
+      version: SNAPSHOT_SCHEMA_VERSION,
+      timestamp: Date.now(),
+      workspace: state.workspace,
+      documents: state.documents,
+      activePageId: state.activePageId,
+      isSidebarCollapsed: state.isSidebarCollapsed,
+      theme: state.theme,
+    };
+    try {
+      await storageInstance.save(snapshot);
+      if (storageInstance.isPersistent) {
+        set({ storageStatus: 'saved', storageError: null });
+      } else {
+        set({
+          storageStatus: 'degraded',
+          storageError: '当前处于纯内存降级模式，数据未持久化到本地',
+        });
+      }
+    } catch (err: any) {
+      set({
+        storageStatus: 'degraded',
+        storageError: err?.message || 'Auto-save failed',
+      });
+    }
+  };
+
+  if (immediate) {
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+    }
+    set({ storageStatus: 'saving' });
+    doSave();
+  } else {
+    set({ storageStatus: 'saving' });
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+    }
+    autoSaveTimer = setTimeout(() => {
+      autoSaveTimer = null;
+      doSave();
+    }, 500);
+  }
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
   // 检查系统/存储偏好的初始主题
   const savedTheme = (typeof window !== 'undefined' && localStorage.getItem('mc_theme')) as 'light' | 'dark' | null;
@@ -168,12 +254,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       description: '私有协作知识库',
       memberCount: 2,
     },
-    setWorkspaceName: (name: string) =>
-      set((state) => ({ workspace: { ...state.workspace, name } })),
+    setWorkspaceName: (name: string) => {
+      set((state) => ({ workspace: { ...state.workspace, name } }));
+      scheduleAutoSave(get, set, false);
+    },
 
     documents: INITIAL_PAGES,
     activePageId: 'welcome-page',
-    setActivePage: (id: string) => set({ activePageId: id }),
+    setActivePage: (id: string) => {
+      set({ activePageId: id });
+      scheduleAutoSave(get, set, false);
+    },
 
     createPage: (parentId: string | null = null, title = '无标题页面', icon = '📄') => {
       const newId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -197,6 +288,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         documents: { ...state.documents, [newId]: newPage },
         activePageId: newId,
       }));
+      scheduleAutoSave(get, set, true);
 
       return newId;
     },
@@ -216,6 +308,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           }
         };
       });
+      scheduleAutoSave(get, set, false);
     },
 
     updateDocumentBlocks: (id: string, blocks: BlockNode[]) => {
@@ -233,20 +326,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           }
         };
       });
+      scheduleAutoSave(get, set, false);
     },
 
     deletePage: (id: string) => {
       set((state) => {
-        const newDocs = { ...state.documents };
-        delete newDocs[id];
-        // 如果删除了当前激活页，跳转到剩余的第一个页面
-        const remainingKeys = Object.keys(newDocs);
-        const nextActiveId = state.activePageId === id ? (remainingKeys[0] || '') : state.activePageId;
+        const { documents: nextDocs, nextActivePageId } = cascadeDeletePage(
+          state.documents,
+          id,
+          state.activePageId
+        );
         return {
-          documents: newDocs,
-          activePageId: nextActiveId,
+          documents: nextDocs,
+          activePageId: nextActivePageId,
         };
       });
+      scheduleAutoSave(get, set, true);
     },
 
     toggleFavorite: (id: string) => {
@@ -260,14 +355,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           }
         };
       });
+      scheduleAutoSave(get, set, false);
     },
 
     getBreadcrumbs: (id: string): BreadcrumbItem[] => {
       const docs = get().documents;
       const crumbs: BreadcrumbItem[] = [];
+      const visited = new Set<string>();
       let currentId: string | null = id;
 
-      while (currentId && docs[currentId]) {
+      while (currentId && docs[currentId] && !visited.has(currentId)) {
+        visited.add(currentId);
         const docItem: DocumentItem = docs[currentId];
         crumbs.unshift({
           id: docItem.id,
@@ -286,8 +384,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     setIsSearchOpen: (open: boolean) => set({ isSearchOpen: open }),
 
     isSidebarCollapsed: false,
-    toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
-    setSidebarCollapsed: (collapsed: boolean) => set({ isSidebarCollapsed: collapsed }),
+    toggleSidebar: () => {
+      set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed }));
+      scheduleAutoSave(get, set, false);
+    },
+    setSidebarCollapsed: (collapsed: boolean) => {
+      set({ isSidebarCollapsed: collapsed });
+      scheduleAutoSave(get, set, false);
+    },
 
     theme: initialTheme,
     toggleTheme: () => {
@@ -303,6 +407,158 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         }
         return { theme: nextTheme };
       });
+      scheduleAutoSave(get, set, false);
+    },
+
+    // Day 7: 本地离线持久化状态与操作方法
+    isHydrated: false,
+    storageStatus: 'idle',
+    storageError: null,
+
+    hydrateStore: async () => {
+      set({ storageStatus: 'loading' });
+      try {
+        const snapshot = await storageInstance.load();
+        if (snapshot) {
+          const isPersistent = storageInstance.isPersistent;
+          set({
+            workspace: snapshot.workspace,
+            documents: snapshot.documents,
+            activePageId: snapshot.activePageId,
+            isSidebarCollapsed: snapshot.isSidebarCollapsed,
+            theme: snapshot.theme,
+            isHydrated: true,
+            storageStatus: isPersistent ? 'saved' : 'degraded',
+            storageError: isPersistent ? null : '当前处于纯内存降级模式，数据未持久化到本地',
+          });
+
+          if (typeof document !== 'undefined') {
+            if (snapshot.theme === 'dark') {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          }
+        } else {
+          // 纯空存储（首次使用）：初始化落地默认快照
+          const current = get();
+          const initialSnapshot: WorkspaceSnapshot = {
+            version: SNAPSHOT_SCHEMA_VERSION,
+            timestamp: Date.now(),
+            workspace: current.workspace,
+            documents: current.documents,
+            activePageId: current.activePageId,
+            isSidebarCollapsed: current.isSidebarCollapsed,
+            theme: current.theme,
+          };
+          try {
+            await storageInstance.save(initialSnapshot);
+            const isPersistent = storageInstance.isPersistent;
+            set({
+              isHydrated: true,
+              storageStatus: isPersistent ? 'saved' : 'degraded',
+              storageError: isPersistent ? null : '当前处于纯内存降级模式，数据未持久化到本地',
+            });
+          } catch (e: any) {
+            set({
+              isHydrated: true,
+              storageStatus: 'degraded',
+              storageError: e?.message || 'Initial save failed',
+            });
+          }
+        }
+      } catch (err: any) {
+        // 捕获到快照数据损坏 (StorageCorruptError) 或读取错误 (StorageReadError)
+        // 严禁在此处保存默认数据覆盖受损或不兼容的原记录！
+        console.warn('[hydrateStore] Failed to load workspace snapshot:', err?.message || err);
+        set({
+          isHydrated: true,
+          storageStatus: 'error',
+          storageError: err?.message || '本地快照数据损坏或读取失败，已暂停自动保存以防覆盖数据',
+        });
+      }
+    },
+
+    saveToStorage: async (immediate = true) => {
+      const state = get();
+      if (state.storageStatus === 'error') {
+        console.warn('[saveToStorage] Skipped saving while storageStatus is "error"');
+        return;
+      }
+
+      if (immediate) {
+        if (autoSaveTimer) {
+          clearTimeout(autoSaveTimer);
+          autoSaveTimer = null;
+        }
+        const snapshot: WorkspaceSnapshot = {
+          version: SNAPSHOT_SCHEMA_VERSION,
+          timestamp: Date.now(),
+          workspace: state.workspace,
+          documents: state.documents,
+          activePageId: state.activePageId,
+          isSidebarCollapsed: state.isSidebarCollapsed,
+          theme: state.theme,
+        };
+        set({ storageStatus: 'saving' });
+        try {
+          await storageInstance.save(snapshot);
+          if (storageInstance.isPersistent) {
+            set({ storageStatus: 'saved', storageError: null });
+          } else {
+            set({
+              storageStatus: 'degraded',
+              storageError: '当前处于纯内存降级模式，数据未持久化到本地',
+            });
+          }
+        } catch (e: any) {
+          set({
+            storageStatus: 'degraded',
+            storageError: e?.message || 'Save failed',
+          });
+        }
+      } else {
+        scheduleAutoSave(get, set, false);
+      }
+    },
+
+    resetStorageToDefault: async () => {
+      if (autoSaveTimer) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
+      }
+      try {
+        await storageInstance.clear();
+      } catch (err) {
+        console.warn('[resetStorageToDefault] Clear failed:', err);
+      }
+      const current = get();
+      const defaultSnapshot: WorkspaceSnapshot = {
+        version: SNAPSHOT_SCHEMA_VERSION,
+        timestamp: Date.now(),
+        workspace: current.workspace,
+        documents: current.documents,
+        activePageId: current.activePageId,
+        isSidebarCollapsed: current.isSidebarCollapsed,
+        theme: current.theme,
+      };
+      try {
+        await storageInstance.save(defaultSnapshot);
+        const isPersistent = storageInstance.isPersistent;
+        set({
+          storageStatus: isPersistent ? 'saved' : 'degraded',
+          storageError: isPersistent ? null : '当前处于纯内存降级模式，数据未持久化到本地',
+        });
+      } catch (e: any) {
+        set({
+          storageStatus: 'degraded',
+          storageError: e?.message || 'Reset save failed',
+        });
+      }
+    },
+
+    setStorageAdapter: (adapter: StorageAdapter) => {
+      storageInstance = adapter;
     },
   };
 });
