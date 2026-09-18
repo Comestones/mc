@@ -1,9 +1,11 @@
+import type { DatabaseSchema } from '../types/database.ts';
 import type { DocumentItem } from '../types/document.ts';
 import type { WorkspaceMeta } from '../types/workspace.ts';
 import { normalizeBlock } from './blockUtils.ts';
+import { normalizeDatabaseSchema } from './databaseUtils.ts';
 import { repairPageTree } from './workspaceUtils.ts';
 
-export const SNAPSHOT_SCHEMA_VERSION = 1;
+export const SNAPSHOT_SCHEMA_VERSION = 2;
 export const DB_NAME = 'mc_workspace_db';
 export const DB_VERSION = 1;
 export const STORE_NAME = 'workspace_snapshots';
@@ -35,6 +37,7 @@ export interface WorkspaceSnapshot {
   activePageId: string;
   isSidebarCollapsed: boolean;
   theme: 'light' | 'dark';
+  databases?: Record<string, DatabaseSchema>;
 }
 
 export interface StorageAdapter {
@@ -44,6 +47,25 @@ export interface StorageAdapter {
   load(): Promise<WorkspaceSnapshot | null>;
   save(snapshot: WorkspaceSnapshot): Promise<void>;
   clear(): Promise<void>;
+}
+
+/**
+ * 迁移旧版本快照至 v2（补齐 databases 实体字典，并升级版本号）
+ */
+export function migrateSnapshotToV2(snapshot: any): WorkspaceSnapshot {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new StorageCorruptError('Cannot migrate null or invalid snapshot');
+  }
+  const databases =
+    snapshot.databases && typeof snapshot.databases === 'object' && !Array.isArray(snapshot.databases)
+      ? snapshot.databases
+      : {};
+
+  return {
+    ...snapshot,
+    version: 2,
+    databases,
+  };
 }
 
 /**
@@ -88,11 +110,22 @@ export function validateWorkspaceSnapshot(
   if (s.theme !== 'light' && s.theme !== 'dark') return false;
   if (typeof s.isSidebarCollapsed !== 'boolean') return false;
 
+  // 6. 数据库实体表校验（v1 可选，v2+ 若存在则必须是合法对象映射）
+  if (s.databases !== undefined) {
+    if (!s.databases || typeof s.databases !== 'object' || Array.isArray(s.databases)) {
+      return false;
+    }
+    for (const [dbId, db] of Object.entries(s.databases)) {
+      if (!db || typeof db !== 'object') return false;
+      if (db.id !== dbId) return false;
+    }
+  }
+
   return true;
 }
 
 /**
- * 规整并深度清洗快照中的文档数据（对各 Block 节点调用统一规范化引擎，修复页面树父子关系）
+ * 规整并深度清洗快照中的文档数据（对各 Block 节点调用统一规范化引擎，修复页面树父子关系，自愈数据库实体）
  */
 export function normalizeSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const normalizedDocs: Record<string, DocumentItem> = {};
@@ -113,10 +146,21 @@ export function normalizeSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapsho
     safeActiveId = docKeys[0];
   }
 
+  // 规整数据库实体表
+  const normalizedDatabases: Record<string, DatabaseSchema> = {};
+  if (snapshot.databases && typeof snapshot.databases === 'object') {
+    for (const [id, db] of Object.entries(snapshot.databases)) {
+      if (db && typeof db === 'object') {
+        normalizedDatabases[id] = normalizeDatabaseSchema(db);
+      }
+    }
+  }
+
   return {
     ...snapshot,
     documents: repairedDocs,
     activePageId: safeActiveId,
+    databases: normalizedDatabases,
   };
 }
 
@@ -164,7 +208,8 @@ export class MemoryStorage implements StorageAdapter {
       try {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (validateWorkspaceSnapshot(parsed)) {
-          return normalizeSnapshot(parsed);
+          const migrated = migrateSnapshotToV2(parsed);
+          return normalizeSnapshot(migrated);
         } else {
           throw new StorageCorruptError('Memory snapshot validation failed: invalid schema');
         }
@@ -174,7 +219,8 @@ export class MemoryStorage implements StorageAdapter {
       }
     }
     if (!this.currentSnapshot) return null;
-    return JSON.parse(JSON.stringify(this.currentSnapshot));
+    const migrated = migrateSnapshotToV2(this.currentSnapshot);
+    return JSON.parse(JSON.stringify(normalizeSnapshot(migrated)));
   }
 
   async save(snapshot: WorkspaceSnapshot): Promise<void> {
@@ -280,7 +326,8 @@ export class IndexedDBStorage implements StorageAdapter {
         try {
           const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
           if (validateWorkspaceSnapshot(parsed)) {
-            resolve(normalizeSnapshot(parsed));
+            const migrated = migrateSnapshotToV2(parsed);
+            resolve(normalizeSnapshot(migrated));
           } else {
             reject(
               new StorageCorruptError(

@@ -1,8 +1,26 @@
 import { create } from 'zustand';
 import { DocumentItem, BreadcrumbItem, BlockNode } from '../types/document';
 import { WorkspaceMeta } from '../types/workspace';
+import type {
+  DatabaseSchema,
+  DatabaseProperty,
+  DatabaseRow,
+  CellValue,
+} from '../types/database';
 import { normalizeBlock } from '../utils/blockUtils';
 import { cascadeDeletePage } from '../utils/workspaceUtils';
+import {
+  createDatabase,
+  addProperty,
+  updateProperty,
+  deleteProperty,
+  reorderProperties,
+  addRow,
+  updateRow,
+  updateCell,
+  deleteRow,
+  reorderRows,
+} from '../utils/databaseUtils';
 import {
   createWorkspaceStorage,
   StorageAdapter,
@@ -48,6 +66,22 @@ interface WorkspaceState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+
+  // Day 8: 多维数据库数据层
+  databases: Record<string, DatabaseSchema>;
+  createDatabase: (title?: string, initialProperties?: DatabaseProperty[]) => string;
+  updateDatabase: (id: string, updates: Partial<DatabaseSchema>) => void;
+  deleteDatabase: (id: string) => void;
+  addDatabaseProperty: (databaseId: string, property: Omit<DatabaseProperty, 'id'> & { id?: string }) => void;
+  updateDatabaseProperty: (databaseId: string, propertyId: string, updates: Partial<DatabaseProperty>) => void;
+  deleteDatabaseProperty: (databaseId: string, propertyId: string) => void;
+  reorderDatabaseProperties: (databaseId: string, newOrder: string[]) => void;
+  addDatabaseRow: (databaseId: string, initialCells?: Record<string, CellValue>, atIndex?: number) => void;
+  updateDatabaseRow: (databaseId: string, rowId: string, updates: Partial<DatabaseRow>) => void;
+  updateDatabaseCell: (databaseId: string, rowId: string, propertyId: string, value: CellValue) => void;
+  deleteDatabaseRow: (databaseId: string, rowId: string) => void;
+  reorderDatabaseRows: (databaseId: string, newOrder: string[]) => void;
+  getDatabase: (id: string) => DatabaseSchema | undefined;
 
   // Day 7: 本地离线持久化与 Hydration
   isHydrated: boolean;
@@ -154,6 +188,12 @@ const INITIAL_PAGES: Record<string, DocumentItem> = {
         id: 'db-2',
         type: 'paragraph',
         content: '支持在同一个数据源上无缝切换表格 (Table)、看板 (Board) 和画廊 (Gallery) 视图。',
+      },
+      {
+        id: 'db-3',
+        type: 'database',
+        content: '',
+        properties: { databaseId: 'demo-db-1' },
       }
     ]
   },
@@ -177,6 +217,71 @@ const INITIAL_PAGES: Record<string, DocumentItem> = {
       }
     ]
   }
+};
+
+const INITIAL_DATABASES: Record<string, DatabaseSchema> = {
+  'demo-db-1': {
+    id: 'demo-db-1',
+    title: '项目需求与任务追踪',
+    icon: '📋',
+    description: '演示多维数据库 Schema 字段结构、行记录与单元格数据',
+    properties: {
+      'prop-title': { id: 'prop-title', name: '任务标题', type: 'title', width: 220 },
+      'prop-status': {
+        id: 'prop-status',
+        name: '状态',
+        type: 'select',
+        width: 140,
+        options: [
+          { id: 'opt-todo', name: '待处理', color: 'gray' },
+          { id: 'opt-prog', name: '进行中', color: 'blue' },
+          { id: 'opt-done', name: '已完成', color: 'green' },
+        ],
+      },
+      'prop-priority': {
+        id: 'prop-priority',
+        name: '优先级',
+        type: 'select',
+        width: 130,
+        options: [
+          { id: 'p-high', name: '高', color: 'red' },
+          { id: 'p-med', name: '中', color: 'orange' },
+          { id: 'p-low', name: '低', color: 'green' },
+        ],
+      },
+      'prop-done': { id: 'prop-done', name: '已归档', type: 'checkbox', width: 100 },
+    },
+    propertyOrder: ['prop-title', 'prop-status', 'prop-priority', 'prop-done'],
+    rows: {
+      'row-1': {
+        id: 'row-1',
+        databaseId: 'demo-db-1',
+        cells: {
+          'prop-title': '多维表格核心数据层 Schema 研发',
+          'prop-status': 'opt-done',
+          'prop-priority': 'p-high',
+          'prop-done': true,
+        },
+        createdAt: Date.now() - 86400000 * 2,
+        updatedAt: Date.now() - 3600000,
+      },
+      'row-2': {
+        id: 'row-2',
+        databaseId: 'demo-db-1',
+        cells: {
+          'prop-title': '页面树与富文本 Block 引擎联动',
+          'prop-status': 'opt-prog',
+          'prop-priority': 'p-med',
+          'prop-done': false,
+        },
+        createdAt: Date.now() - 86400000,
+        updatedAt: Date.now() - 1800000,
+      },
+    },
+    rowOrder: ['row-1', 'row-2'],
+    createdAt: Date.now() - 86400000 * 3,
+    updatedAt: Date.now() - 1800000,
+  },
 };
 
 let storageInstance: StorageAdapter = createWorkspaceStorage();
@@ -203,6 +308,7 @@ function scheduleAutoSave(
       activePageId: state.activePageId,
       isSidebarCollapsed: state.isSidebarCollapsed,
       theme: state.theme,
+      databases: state.databases,
     };
     try {
       await storageInstance.save(snapshot);
@@ -410,6 +516,180 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       scheduleAutoSave(get, set, false);
     },
 
+    // Day 8: 多维数据库数据层状态与 CRUD 操作
+    databases: INITIAL_DATABASES,
+
+    createDatabase: (title = '未命名数据库', initialProperties?: DatabaseProperty[]) => {
+      const db = createDatabase(title, initialProperties);
+      set((state) => ({
+        databases: {
+          ...state.databases,
+          [db.id]: db,
+        },
+      }));
+      scheduleAutoSave(get, set, false);
+      return db.id;
+    },
+
+    updateDatabase: (id: string, updates: Partial<DatabaseSchema>) => {
+      set((state) => {
+        const existing = state.databases[id];
+        if (!existing) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [id]: {
+              ...existing,
+              ...updates,
+              id,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    deleteDatabase: (id: string) => {
+      set((state) => {
+        if (!state.databases[id]) return state;
+        const nextDbs = { ...state.databases };
+        delete nextDbs[id];
+        return { databases: nextDbs };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    addDatabaseProperty: (databaseId, property) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: addProperty(db, property),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseProperty: (databaseId, propertyId, updates) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: updateProperty(db, propertyId, updates),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    deleteDatabaseProperty: (databaseId, propertyId) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: deleteProperty(db, propertyId),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    reorderDatabaseProperties: (databaseId, newOrder) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: reorderProperties(db, newOrder),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    addDatabaseRow: (databaseId, initialCells, atIndex) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: addRow(db, initialCells, atIndex),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseRow: (databaseId, rowId, updates) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: updateRow(db, rowId, updates),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseCell: (databaseId, rowId, propertyId, value) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: updateCell(db, rowId, propertyId, value),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    deleteDatabaseRow: (databaseId, rowId) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: deleteRow(db, rowId),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    reorderDatabaseRows: (databaseId, newOrder) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: reorderRows(db, newOrder),
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    getDatabase: (id: string) => {
+      return get().databases[id];
+    },
+
     // Day 7: 本地离线持久化状态与操作方法
     isHydrated: false,
     storageStatus: 'idle',
@@ -427,6 +707,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             activePageId: snapshot.activePageId,
             isSidebarCollapsed: snapshot.isSidebarCollapsed,
             theme: snapshot.theme,
+            databases: snapshot.databases || {},
             isHydrated: true,
             storageStatus: isPersistent ? 'saved' : 'degraded',
             storageError: isPersistent ? null : '当前处于纯内存降级模式，数据未持久化到本地',
@@ -450,6 +731,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             activePageId: current.activePageId,
             isSidebarCollapsed: current.isSidebarCollapsed,
             theme: current.theme,
+            databases: current.databases,
           };
           try {
             await storageInstance.save(initialSnapshot);
@@ -499,6 +781,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           activePageId: state.activePageId,
           isSidebarCollapsed: state.isSidebarCollapsed,
           theme: state.theme,
+          databases: state.databases,
         };
         set({ storageStatus: 'saving' });
         try {
@@ -541,6 +824,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         activePageId: current.activePageId,
         isSidebarCollapsed: current.isSidebarCollapsed,
         theme: current.theme,
+        databases: current.databases,
       };
       try {
         await storageInstance.save(defaultSnapshot);

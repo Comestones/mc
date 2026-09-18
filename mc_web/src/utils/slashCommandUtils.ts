@@ -81,6 +81,13 @@ export const SLASH_COMMAND_ITEMS: SlashCommandItem[] = [
     keywords: ['callout', 'alert', 'info', 'note', 'box', 'tishi'],
   },
   {
+    id: 'cmd-database',
+    type: 'database',
+    label: '多维数据库',
+    description: '结构化二维表与数据视图',
+    keywords: ['database', 'table', 'db', 'biaoge', 'shujuku', 'sjk', 'grid'],
+  },
+  {
     id: 'cmd-divider',
     type: 'divider',
     label: '分割线',

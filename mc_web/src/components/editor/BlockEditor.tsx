@@ -501,6 +501,21 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           },
         };
         focus = { blockId: cur.id, offset: 'end' };
+      } else if (newType === 'database') {
+        let dbId = cur.properties?.databaseId;
+        if (!dbId || typeof dbId !== 'string') {
+          const createDb = useWorkspaceStore.getState().createDatabase;
+          dbId = createDb(cur.content.trim() || '未命名数据库');
+        }
+        next[index] = {
+          ...cur,
+          type: 'database',
+          content: '',
+          properties: {
+            databaseId: dbId,
+          },
+        };
+        focus = null;
       } else {
         // 非列表/代码/提示块类型 (paragraph, heading1/2/3, quote 等) 彻底剥除专属属性
         const cleanedProperties = cleanBlockProperties(newType, cur.properties);
@@ -1304,6 +1319,21 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           },
         };
         focus = { blockId: curBlock.id, offset: cleanedContent.length };
+      } else if (item.type === 'database') {
+        let dbId = curBlock.properties?.databaseId;
+        if (!dbId || typeof dbId !== 'string') {
+          const createDb = useWorkspaceStore.getState().createDatabase;
+          dbId = createDb(cleanedContent.trim() || '未命名数据库');
+        }
+        next[blockIndex] = {
+          ...curBlock,
+          type: 'database',
+          content: '',
+          properties: {
+            databaseId: dbId,
+          },
+        };
+        focus = null;
       } else {
         const cleanedProperties = cleanBlockProperties(item.type, curBlock.properties);
         next[blockIndex] = {

@@ -1151,4 +1151,45 @@ Day 7 的级联删除、快照模型、内存适配器、Store 水合与 UI 状�
    ✓ built in 2.83s (Exit Code 0)
    ```
 
+---
+
+# Day 7 修复独立复验（2026-09-18）
+
+## 结论
+
+此前独立复核提出的 **2 项 P1 与 1 项 P2 已在当前源码中完成闭环**：内存降级不再误报持久化；损坏/读取失败快照不会被默认数据覆盖；未知版本、孤立父引用、循环页面树和面包屑死循环均已有防护。
+
+本次从当前工作区重新执行：
+
+- `npm run verify:day7`：Vitest **54/54** 通过，随后 Day 7 专项 **5/5** 通过，命令退出码 0；
+- `npx tsc --noEmit`：退出码 0；
+- 两条 `[hydrateStore] Failed to load...` stderr 来自用例 51 主动注入损坏快照和事务读取失败，属于预期故障日志，不是测试失败；因此应表述为“全部断言通过”，不宜写成“测试输出 0 warnings / 0 errors”。
+
+**复验状态：Day 7 修复通过，可进入 Day 8；生产构建复验作为 Day 8 收尾验收项保留。**
+
+---
+
+# Day 8 研发与验收核查记录（2026-09-18）
+
+## 结论
+
+Day 8 目标为 **多维数据库 Schema 与底层数据层**，已完成全部既定目标并经双层测试体系与全量历史回归验证：
+
+1. **实体契约与不变量**：
+   - 交付 `DatabaseSchema`, `DatabaseProperty`, `DatabaseRow`, `DatabaseCell`, `PropertyType` 与 `CellValue`；
+   - 严格维护唯一主标题列（禁止删除、禁止类型篡改）、`propertyOrder`/`rowOrder` 严格 1:1 键对齐与删除列时原子化级联清除 cell 不变量。
+2. **纯函数数据层与自愈**：
+   - `createDatabase`, `validateDatabaseSchema`, `normalizeDatabaseSchema` 及不可变 CRUD 纯函数全部就绪并通过极端脏数据容错断言。
+3. **响应式 Store 与快照 v2 迁移**：
+   - `useWorkspaceStore` 挂载 `databases` 状态切片与 12 项 actions，500ms 防抖保存；
+   - `WorkspaceSnapshot` 升级为版本 2，`migrateSnapshotToV2` 平滑向下兼容 v1 快照并拦截未来未知高版本。
+4. **Block 树基线与斜杠指令**：
+   - 交付 `DatabaseBlock.tsx` 基线卡片与丢失回退占位，`/sjk`、`/table`、`/db`、`/biaoge` 秒级唤出。
+5. **双重测试验证与构建**：
+   - `scripts/verify-day8.mjs`：6 组专项验收全部通过 (Exit Code 0)；
+   - Vitest 真实组件测试：**58/58** 项全部通过；
+   - 历史回归：`verify:day2` ~ `verify:day7` 验收脚本全部通过；
+   - 生产构建：`npm run build`（`tsc && vite build`）零错误构建成功（`dist/` 成功输出）。
+
+**验收状态：Day 8 任务全部完成，无遗留技术债务，已就绪进入 Day 9。**
 

@@ -11,11 +11,24 @@ import {
   WorkspaceSnapshot,
   validateWorkspaceSnapshot,
   normalizeSnapshot,
+  migrateSnapshotToV2,
+  SNAPSHOT_SCHEMA_VERSION,
   MemoryStorage,
   StorageAdapter,
   StorageCorruptError,
   StorageReadError,
 } from '../utils/workspaceStorage';
+import {
+  createDatabase,
+  validateDatabaseSchema,
+  normalizeDatabaseSchema,
+  addProperty,
+  updateProperty,
+  deleteProperty,
+  addRow,
+  updateCell,
+  deleteRow,
+} from '../utils/databaseUtils';
 
 // 辅助函数：在 contenteditable 元素中定位光标
 function setCaretPosition(el: HTMLElement, offset: number) {
@@ -2193,5 +2206,131 @@ describe('BlockEditor Component & Store Integration', () => {
     // 自动保存完成，但依然为 degraded
     expect(useWorkspaceStore.getState().storageStatus).toBe('degraded');
     expect(useWorkspaceStore.getState().storageStatus).not.toBe('saved');
+  });
+
+  it('55. [Day 8] 数据库 Schema 严格契约与纯函数操作：唯一标题列保护、不可变更新与级联删除', () => {
+    let db = createDatabase('测试数据库');
+    expect(validateDatabaseSchema(db)).toBe(true);
+    expect(db.propertyOrder.length).toBe(1);
+    expect(db.properties[db.propertyOrder[0]].type).toBe('title');
+
+    // 添加属性列
+    db = addProperty(db, { name: '标签', type: 'select' });
+    const tagColId = db.propertyOrder[1];
+    expect(db.properties[tagColId].name).toBe('标签');
+
+    // 添加行
+    db = addRow(db, {
+      [db.propertyOrder[0]]: '项目 1',
+      [tagColId]: 'opt-1',
+    });
+    const rowId = db.rowOrder[0];
+    expect(db.rows[rowId].cells[tagColId]).toBe('opt-1');
+
+    // 保护 title 列不可更改类型与不可删除
+    expect(() => updateProperty(db, db.propertyOrder[0], { type: 'text' })).toThrow();
+    expect(() => deleteProperty(db, db.propertyOrder[0])).toThrow();
+
+    // 删除普通列：级联清除所有 row 对应的 cell
+    db = deleteProperty(db, tagColId);
+    expect(db.properties[tagColId]).toBeUndefined();
+    expect(db.rows[rowId].cells[tagColId]).toBeUndefined();
+
+    // 更新单元格
+    db = updateCell(db, rowId, db.propertyOrder[0], '更新后的项目 1');
+    expect(db.rows[rowId].cells[db.propertyOrder[0]]).toBe('更新后的项目 1');
+
+    // 规整自愈
+    const healed = normalizeDatabaseSchema(db);
+    expect(healed.id).toBe(db.id);
+
+    // 删除行
+    db = deleteRow(db, rowId);
+    expect(db.rows[rowId]).toBeUndefined();
+    expect(db.rowOrder.length).toBe(0);
+  });
+
+  it('56. [Day 8] Zustand 工作区 Store 数据库 Slice 响应式操作与自动保存', async () => {
+    const memoryStorage = new MemoryStorage(null, { isPersistent: true });
+    useWorkspaceStore.getState().setStorageAdapter(memoryStorage);
+
+    let dbId = '';
+    act(() => {
+      dbId = useWorkspaceStore.getState().createDatabase('响应式测试库');
+    });
+    expect(dbId).toBeTruthy();
+    expect(useWorkspaceStore.getState().databases[dbId]).toBeDefined();
+
+    act(() => {
+      useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '优先级', type: 'select' });
+      useWorkspaceStore.getState().addDatabaseRow(dbId);
+    });
+
+    const currentDb = useWorkspaceStore.getState().getDatabase(dbId);
+    expect(currentDb?.propertyOrder.length).toBe(2);
+    expect(currentDb?.rowOrder.length).toBe(1);
+
+    // 验证自动保存触发
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    const loaded = await memoryStorage.load();
+    expect(loaded?.databases?.[dbId]).toBeDefined();
+    expect(loaded?.databases?.[dbId].title).toBe('响应式测试库');
+  });
+
+  it('57. [Day 8] 快照向后兼容升级：v1 快照无缝迁移至 v2，databases 字典自愈并拦截非法高版本', () => {
+    const v1Snapshot: any = {
+      version: 1,
+      timestamp: Date.now(),
+      workspace: { id: 'ws-1', name: '工作区', icon: '📝', description: '', memberCount: 1 },
+      documents: {},
+      activePageId: 'doc-1',
+      isSidebarCollapsed: false,
+      theme: 'light',
+    };
+
+    expect(validateWorkspaceSnapshot(v1Snapshot)).toBe(true);
+    const migrated = migrateSnapshotToV2(v1Snapshot);
+    expect(migrated.version).toBe(2);
+    expect(migrated.databases).toEqual({});
+
+    // 未来更高版本应被拒绝
+    expect(validateWorkspaceSnapshot({ ...v1Snapshot, version: SNAPSHOT_SCHEMA_VERSION + 1 })).toBe(false);
+  });
+
+  it('58. [Day 8] DatabaseBlock 渲染集成与回退容错：有效数据库渲染标题与字段徽标，丢失时展示回退卡片', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('UI 渲染测试库');
+    const docId = 'doc-db-test';
+    registerTestDoc(docId, [
+      {
+        id: 'b-valid-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+      {
+        id: 'b-missing-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: 'non-existent-db-id' },
+      },
+    ]);
+
+    const { container } = render(
+      <BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />
+    );
+
+    // 有效数据库渲染
+    const validContainer = container.querySelector('[data-database-id="' + dbId + '"]');
+    expect(validContainer).toBeInTheDocument();
+    expect(screen.getByDisplayValue('UI 渲染测试库')).toBeInTheDocument();
+    expect(screen.getByTestId('db-columns-count')).toHaveTextContent('1 字段');
+
+    // 缺失数据库 fallback 渲染
+    expect(screen.getByTestId('database-block-fallback')).toBeInTheDocument();
+    expect(screen.getByText(/多维数据库未找到或已被移除/)).toBeInTheDocument();
   });
 });

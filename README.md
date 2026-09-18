@@ -63,12 +63,20 @@
   - **IndexedDB 版本化快照**：建立 `mc_workspace_db` 对象存储与版本化 schema (`WorkspaceSnapshot` v1)；冷启动异步 Hydration 先读取校验快照再开放编辑，无快照时落入默认示例数据，彻底防止初始示例覆盖用户本地修改。
   - **500ms 防抖自动保存与容错降级**：页面增删改、块更新、主题与侧边栏变动防抖自动持久化；顶栏 Navbar 呈现响应式状态徽标（`已保存本地` / `保存中...` / `存储降级` / `离线就绪`）；存储受限或报错时优雅降级为纯内存编辑，保障非阻塞操作。
   - **页面树完整性与级联删除**：交付 `cascadeDeletePage` 算法，递归级联删除父页面与其所有嵌套后代，根除孤立 `parentId` 残留；删除激活页时智能安全回退至存活父级或顶级页面；删除弹窗明确提示子页面总数。
-  - **全量自动化验证与阶段收官**：Vitest 真实组件测试扩充至 **52 项全部通过 (0 warnings / 0 errors)**，新增 `scripts/verify-day7.mjs` 覆盖 5 大测试集通过，`verify:day2` ~ `verify:day7` 全套验收脚本全部通过，TypeScript 零错误，Vite 生产构建成功。
+  - **全量自动化验证与阶段收官**：Vitest 真实组件测试扩充至 **54 项全部通过 (0 warnings / 0 errors)**，新增 `scripts/verify-day7.mjs` 覆盖 5 大测试集通过，`verify:day2` ~ `verify:day7` 全套验收脚本全部通过，TypeScript 零错误，Vite 生产构建成功。
+- **Day 8 多维数据库 Schema 设计与底层数据层 (Database Core Engine)**：
+  - **规范化实体契约**：在 `src/types/database.ts` 定义 `DatabaseSchema`、`DatabaseProperty`、`DatabaseRow`、`DatabaseCell` 与可扩展属性类型（title, text, number, select, multiSelect, checkbox, date, url）与单元格值联合。
+  - **不变量保护与纯函数数据层**：交付 `databaseUtils.ts` 纯函数，严格断言与维护主标题列唯一性、`propertyOrder`/`rowOrder` 1:1 键集合对齐、禁止删除主标题列、禁止篡改主标题列类型，并在删除普通属性列时原子化级联移除所有行关联 cell。
+  - **响应式 Store 与自动保存**：在 `useWorkspaceStore.ts` 扩展 `databases` 状态切片与 12 项增删改查 actions/selectors，原子化接入 500ms 防抖持久化管道。
+  - **快照 v1 -> v2 平滑迁移**：升级 `WorkspaceSnapshot` 至版本 2，交付 `migrateSnapshotToV2` 兼容旧版快照，拦截未知未来高版本。
+  - **Block 树基线与斜杠指令**：交付 `DatabaseBlock.tsx` 及其未找到回退占位卡片；斜杠指令支持 `/sjk`, `/table`, `/db`, `/biaoge` 秒级唤出并关联新数据库。
+  - **全量测试与回归**：新增 `scripts/verify-day8.mjs`（6 大模块验收全部通过），Vitest 组件测试扩充至 **58 项全部通过**，Day 2~7 历史全量验收脚本零回归，生产构建零错误打包成功。
 
 ## 🎯 下一阶段：Sprint 2 (多维数据库引擎与三重视图，Day 8 - 14)
 
-- **Day 8**：多维数据库 Schema 设计与底层数据层 (Database, Column/Property, Row/Item, Cell)。
+- **Day 8**：多维数据库 Schema 设计与底层数据层 *(已完成)*。
 - **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑。
+- **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect)。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -80,7 +88,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（52 项全部通过，0 警告 0 报错）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（58 项全部通过，0 警告 0 报错）。
+- 执行 `npm run verify:day8` 运行 Day 8 多维数据库 Schema 与底层数据层验收。
 - 执行 `npm run verify:day7` 运行 Day 7 本地离线持久化与数据完整性验收。
 - 执行 `npm run verify:day6` 运行 Day 6 块级拖拽重排与批量操作验收。
 - 执行 `npm run verify:day5` 运行 Day 5 斜杠指令状态机、拼音算法、选区与安全清洗验收。
@@ -93,6 +102,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 2 - Day 8: 多维数据库 Schema 设计与底层数据层]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 2 - Day 9: 表格视图核心交互与单元格点按编辑]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

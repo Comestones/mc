@@ -52,6 +52,10 @@ export const BLOCK_PINYIN_MAP: Record<string, PinyinMeta> = {
     full: ['tishikuai', 'tishi', 'gaoliang', 'jinggao'],
     initials: ['tsk', 'ts', 'gl', 'jg'],
   },
+  database: {
+    full: ['duoweishujuku', 'shujuku', 'biaoge', 'duowei'],
+    initials: ['dwsjk', 'sjk', 'bg', 'dw'],
+  },
   divider: {
     full: ['fengexian', 'fenge', 'hengxian'],
     initials: ['fgx', 'fg', 'hx'],

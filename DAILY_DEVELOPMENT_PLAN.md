@@ -125,16 +125,21 @@ flowchart LR
   - **IndexedDB 数据层**：定义版本化 schema (`WorkspaceSnapshot` v1) 与原生 Promise 封装 `IndexedDBStorage` / `MemoryStorage`；首屏异步 hydration 先载入快照，无快照时载入默认示例数据，彻底防止初始数据覆写用户本地编辑。
   - **自动保存与容错**：对页面增删改、块更新、收藏、工作区名称、侧边栏折叠与主题变更执行 500ms 防抖持久化；顶栏新增存储状态实时反馈（`已保存本地` / `保存中...` / `存储降级` / `离线就绪`）；存储异常或受限环境下自动降级为纯内存模式，非阻塞用户正常编辑。
   - **页面树完整性与级联删除**：交付 `cascadeDeletePage` 算法，递归级联删除页面及其所有嵌套子孙页面，根除孤立 `parentId` 残留；删除当前激活页时智能回退至父级、首个顶级或可用页面。
-  - **全量自动化验证与阶段收尾**：新增 `scripts/verify-day7.mjs` 验收脚本并在 `package.json` 注册 `verify:day7`；Vitest 扩充至 **52 项用例全部通过**，全量回归 Day 2 ~ Day 6 脚本零错误，TypeScript 零错误，Vite 生产构建成功；完成 Sprint 1 阶段总结与向 Sprint 2 多维数据库的架构交接说明。
+  - **全量自动化验证与阶段收尾**：新增 `scripts/verify-day7.mjs` 验收脚本并在 `package.json` 注册 `verify:day7`；Vitest 扩充至 **54 项用例全部通过**，全量回归 Day 2 ~ Day 6 脚本零错误，TypeScript 零错误，Vite 生产构建成功；完成 Sprint 1 阶段总结与向 Sprint 2 多维数据库的架构交接说明。
 
 ---
 
 ### Sprint 2: 多维数据库引擎与三重视图 (Day 8 - 14)
 > **阶段目标**：实现类似 Notion 的结构化数据表格，并无缝切看板与画廊视图。
 
-- [ ] **Day 8: 多维数据库 Schema 设计与底层数据层**
-  - 设计 Database、Column/Property、Row/Item、Cell 核心数据结构
-  - 在前端实现响应式 Database Store (Zustand 或 TanStack Table)
+- [x] **Day 8: 多维数据库 Schema 设计与底层数据层** *(已完成)*
+  - **架构边界**：数据库块仅保存稳定的 `databaseId` 引用，Database / Property / Row / Cell 使用规范化实体表独立存储于 Workspace 根级字典，严禁把整张表嵌入 `BlockNode.properties`；明确页面删除、数据库引用与行数据之间的所有权规则。
+  - **Schema 契约**：定义 `DatabaseSchema`、`DatabaseProperty`、`DatabaseRow`、`DatabaseCell`、可扩展的 `PropertyType` (title, text, number, select, multiSelect, checkbox, date, url) 与 `CellValue` 联合类型，严格维护唯一主标题列、`propertyOrder` / `rowOrder` 1:1 无悬空严格对应等不变量。
+  - **纯函数数据层**：交付 `createDatabase`、`validateDatabaseSchema`、`normalizeDatabaseSchema` 以及列与行的不可变 CRUD 纯函数；提供严密的不变量防御（禁止删除主标题列、禁止修改主标题列类型、多标题列降级为 text、删除列原子化级联移除所有行的对应 cell）。
+  - **响应式 Store**：以 Zustand slice 形式接入现有工作区 Store，提供 12 项数据库增删改查 actions 与 selectors，每次操作触发 500ms 防抖自动持久化。
+  - **持久化迁移**：将 `WorkspaceSnapshot` 升级为 v2，提供显式 `v1 -> v2` 纯函数迁移（自动初始化 `databases` 字典并规整数据），保证旧工作区无损向下兼容；未知高版本继续零覆盖保护。
+  - **块树接入基线**：补齐 `database` 块的属性清洗与缺失数据库降级卡片；斜杠指令支持 `/sjk`、`/table`、`/db`、`/biaoge` 快速创建并插入多维数据库块；为 Day 9 表格视图提供稳定入口。
+  - **验收与回归**：新增 `verify:day8` 验收脚本并在 `package.json` 注册，Vitest 真实组件测试扩充至 **58 项全部通过**；Day 2 ~ Day 7 全套验收脚本零回归，`tsc` 零错误，Vite 生产构建成功。
 - [ ] **Day 9: 表格视图 (Table View) 核心交互**
   - 表格行/列渲染、平滑滚动、列宽自由拖拽调整
   - 单元格即时点按编辑（Inline Editing）
@@ -240,24 +245,23 @@ flowchart LR
 > 💡 **使用说明**：随着每天的推进，直接修改此处的复选框 `[ ]` 为 `[x]`，并记录当天的简要备注。
 
 ### 📊 当前整体进度概览
-- **当前所处 Sprint**: **Sprint 1 (已圆满完成) ➔ 即将进入 Sprint 2 (多维数据库引擎与三重视图)**
-- **已完成天数**: `7 / 35`（Sprint 1 全满交付）
-- **总体完成度**: `20%`
+- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 8 已交付，Day 9 待推进**
+- **已完成天数**: `8 / 35`（Sprint 1 全满交付 + Sprint 2 顺利启航）
+- **总体完成度**: `22.8%`
 
 ```
-[████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 20%
+[█████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 22.8%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Sprint 1 (Day 1 - 7: 脚手架与核心编辑器) 100% 圆满收尾交付！Sprint 2 (Day 8: 多维数据库 Schema 与底层数据层) 准备就绪。**
-- **成果**：
-  1. **本地离线持久化体系**：基于原生 IndexedDB 建立版本化快照仓库 (`mc_workspace_db`)，规范化 `WorkspaceSnapshot`（版本号、时间戳、工作区元信息、文档树、激活页、侧边栏与主题）；首屏异步 hydration 先载入快照，无快照时载入默认示例数据，彻底防止初始数据覆写用户本地编辑；
-  2. **非阻塞自动保存与容错降级**：实现 500ms 防抖保存机制与状态机流转（`idle` -> `saving` -> `saved` -> `degraded`），在顶栏 Navbar 提供清晰直观的本地存储徽标指示；当受限环境或配额溢出时平滑降级为纯内存编辑；
-  3. **页面树完整性与级联删除**：重构 `deletePage`，接入 `cascadeDeletePage` 递归收集并彻底剥离所有子孙后代节点，消除孤立 `parentId`；激活页被删时平滑重定向至安全页面；
-  4. **自动化测试与全量回归**：编写 `verify-day7.mjs`，Vitest 组件测试扩充至 **52 项全部通过 (0 warnings / 0 errors)**，Day 2 ~ Day 7 全套验证脚本 100% 通过，`tsc --noEmit` 零错误，生产打包构建 `npm run build` 成功。
-- **明日计划（Sprint 2 - Day 8）**：
-  1. 设计多维数据库数据模型 (Database, Column/Property, Row/Item, Cell)；
-  2. 搭建响应式 Database Store 并定义与主工作区文档树的无缝嵌入映射规范。
+- **状态**: **Day 8 多维数据库 Schema 与底层数据层已 100% 圆满交付收官；明日进入 Day 9：表格视图 (Table View) 核心交互。**
+- **Day 8 交付成果**：
+  1. 交付规范化 `DatabaseSchema`, `DatabaseProperty`, `DatabaseRow`, `DatabaseCell`, `PropertyType`, `CellValue` 实体模型定义；
+  2. 纯函数数据层 `createDatabase`, `validateDatabaseSchema`, `normalizeDatabaseSchema` 及不可变列/行 CRUD，严格落实唯一主标题列保护与列删除原子化级联移除单元格不变量；
+  3. `useWorkspaceStore` 扩展 12 项响应式数据库 actions 与 selectors，结合 500ms 防抖自动持久化；
+  4. 存储快照升级为 `WorkspaceSnapshot` v2，交付 `migrateSnapshotToV2` 平滑兼容历史旧快照，未知高版本继续拦截保护；
+  5. 交付 `DatabaseBlock.tsx` 及其空状态/丢失降级占位，斜杠指令支持 `/sjk`, `/table`, `/db`, `/biaoge`；
+  6. 全套测试验收：`npm run verify:day8` 6 大模块全绿，Vitest 真实测试扩充至 **58/58 全部通过**，Day 2~7 历史全量零回归，`tsc` 零错误，Vite 生产构建成功。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -490,6 +494,43 @@ flowchart LR
 - [x] 模拟存储配额满或抛出异常时，顶栏展示橙色“存储降级”状态并记录错误信息，用户在内存中继续创建和编辑页面完全不发生报错崩溃。
 - [x] Day 2 ~ Day 6 既有功能（轻量块树、常用块类型、列表缩进防跳级、代码高亮、斜杠指令、选区浮动栏、拖拽重排、批量删除）100% 保持无回归。
 
+### Day 7 修复复核记录（2026-09-18）
+
+- [x] **P1 内存降级误报修复**：`StorageAdapter` 增加 `kind` / `isPersistent`，MemoryStorage 水合与保存后保持 `degraded`，UI 明确提示数据未持久化。
+- [x] **P1 损坏快照零覆盖修复**：读取层区分空记录、`StorageCorruptError` 与 `StorageReadError`；异常进入 `error` 并暂停自动保存，仅允许用户显式重置。
+- [x] **P2 版本与树完整性修复**：拒绝未知高版本；`repairPageTree` 修复孤立父引用并打破环路；后代扫描和面包屑均加入 visited 防护。
+- [x] **当前工作区复验**：`npm run verify:day7` 完整通过（Vitest 54/54 + Day 7 专项 5/5，Exit Code 0）；`npx tsc --noEmit` 通过。故障注入用例产生两条预期的存储错误日志，不影响测试结果。
+- [x] **生产构建复验**：在 Day 8 交付时完成全量生产打包（`npm run build`），零报错通过。
+
+### Day 8 验收核查记录（2026-09-18）
+
+- [x] **实体模型与类型定义 (`src/types/database.ts`)**：
+  - 交付 `DatabaseSchema`, `DatabaseProperty`, `DatabaseRow`, `DatabaseCell`, `PropertyType`, `CellValue`, `SelectOption` 标准契约定义。
+  - 属性类型完整覆盖 `title`, `text`, `number`, `select`, `multiSelect`, `checkbox`, `date`, `url`。
+- [x] **纯函数数据层与不变量保护 (`src/utils/databaseUtils.ts`)**：
+  - `createDatabase`: 自动配置唯一必需的主标题属性列（`type: 'title'`, id `'prop-title'`, 默认列宽 220px）。
+  - `validateDatabaseSchema`: 严格断言唯一主标题列、`propertyOrder` 与 `properties` 1:1 键集合无重复无遗漏、`rowOrder` 与 `rows` 1:1 键集合及所属 `databaseId` 完整性。
+  - `normalizeDatabaseSchema`: 缺失/重复标题列自愈降级、属性顺序/行记录去重补齐、悬空垃圾单元格级联清理。
+  - 纯函数不可变 CRUD：增删改属性列、不可变增删改行记录与单元格；强防御主标题列（严禁删除主标题列、严禁修改主标题列为非 title 类型、严禁添加重复 title 列）；删除属性列时原子化级联移除所有行中该属性的单元格。
+- [x] **工作区 Store 响应式集成 (`src/store/useWorkspaceStore.ts`)**：
+  - 扩展 `databases: Record<string, DatabaseSchema>` 状态切片；
+  - 扩展 12 项 actions：`createDatabase`, `updateDatabase`, `deleteDatabase`, `addDatabaseProperty`, `updateDatabaseProperty`, `deleteDatabaseProperty`, `reorderDatabaseProperties`, `addDatabaseRow`, `updateDatabaseRow`, `updateDatabaseCell`, `deleteDatabaseRow`, `reorderDatabaseRows`, `getDatabase`；
+  - 每次数据库变更原子化触发 500ms 防抖自动保存至持久化存储。
+- [x] **存储快照平滑迁移 (`src/utils/workspaceStorage.ts`)**：
+  - `SNAPSHOT_SCHEMA_VERSION` 升级为 2；
+  - 交付 `migrateSnapshotToV2` 纯函数，旧版 v1 快照无缝迁移至 v2，自动注入空 `databases` 字典；
+  - `validateWorkspaceSnapshot` 向后兼容 v1 快照并严格校验 v2 数据库集合合法性，阻断未知未来高版本快照以防脏数据覆写。
+- [x] **Block 树集成与 UI 基线 (`src/components/editor/DatabaseBlock.tsx`)**：
+  - 交付 `DatabaseBlock.tsx` 基线组件，展示数据库标题、图标、列数/行数徽标、属性头与行记录预览，支持快速添加行；
+  - 提供缺失/未绑定数据库降级回退卡片与一键新建关联按钮；
+  - 在 `BlockItem.tsx` 挂载 `type: 'database'` 分支；在 `BlockTypeSelector.tsx` 增加多维数据库项；
+  - 斜杠指令支持 `/sjk`, `/table`, `/db`, `/biaoge` 秒级唤出多维数据库创建并插入。
+- [x] **全量自动化验证与历史回归**：
+  - 交付 `scripts/verify-day8.mjs`，包含 6 大专项测试集（Schema 契约、列操作防御、行操作、自愈规范化、v1 迁移、Block 属性隔离与斜杠指令），Exit Code 0 全部通过；
+  - Vitest 真实组件测试扩充至 **58 项全部通过**；
+  - 全量回归 Day 2 ~ Day 7 验收脚本（`verify:day2` ~ `verify:day7`）全部绿灯通过；
+  - `npx tsc --noEmit` 零类型错误，`npm run build`（`tsc && vite build`）成功输出生产产物。
+
 ---
 
 ### Sprint 1 阶段总结与向 Sprint 2 演进交付说明
@@ -501,7 +542,7 @@ Sprint 1（脚手架与核心编辑器）已圆满完成 7 天的精细化迭代
 - **丰富块类型矩阵**：段落、一级至三级标题、分割线、无序列表、有序列表（动态递增计算）、待办清单（划线交互）、代码块（Prism.js Token 高亮与 14 种语言）、引用块、提示块（12 Emoji + 5 色彩基调）；
 - **高级流式与批量交互**：拼音/全拼/英文多模态斜杠指令 (`/`)、选区浮动工具栏 (Bubble Menu)、6-dot 悬浮手柄、HTML5 拖拽上下指示线重排、多块连续/非连续多选、一键批量删除与 Markdown 复制，全链路接入 Undo/Redo 本地历史栈；
 - **离线持久化与数据完整性**：原生 IndexedDB 版本化存储快照、首屏水合保护、500ms 防抖保存、页面级联删除防孤立 parentId、受限环境降级容灾；
-- **工程化质量保障**：全套 52 项 Vitest 真实组件测试（0 警告、0 报错）、6 大专项自动化验收脚本、TypeScript 零错误、生产构建随时就绪。
+- **工程化质量保障**：全套 54 项 Vitest 真实组件测试（含存储故障注入预期日志）、6 大专项自动化验收脚本、TypeScript 零错误、生产构建随时就绪。
 
 #### 2. 向 Sprint 2 (多维数据库引擎与三重视图) 演进交接说明
 - **数据结构扩展规范**：Sprint 2 将引入 `Database`、`Column/Property`、`Row/Item`、`Cell` 模型。在块树中，多维表格将作为一个顶级的特殊块类型（`type: 'database'` 或以独立子页面形式挂载），其属性将存放在 Block properties 或独立 Database 实体中；

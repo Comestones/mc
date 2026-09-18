@@ -13,6 +13,7 @@ import {
   Code,
   Quote,
   Lightbulb,
+  Table,
 } from 'lucide-react';
 import { BlockType } from '../../types/document';
 import { cn } from '../../utils/cn';
@@ -92,6 +93,12 @@ const TYPE_OPTIONS: TypeOption[] = [
     label: '提示块',
     description: '多彩背景与 Emoji 强调提示',
     icon: <Lightbulb className="w-4 h-4" />,
+  },
+  {
+    type: 'database',
+    label: '多维数据库',
+    description: '结构化二维表与数据视图',
+    icon: <Table className="w-4 h-4" />,
   },
   {
     type: 'divider',

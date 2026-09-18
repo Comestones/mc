@@ -188,13 +188,14 @@ export function cleanBlockProperties(
   if (!properties) return undefined;
   const rest = { ...properties };
 
-  // 全局清理列表、代码、提示块属性
+  // 全局清理列表、代码、提示块、数据库属性
   delete rest.level;
   delete rest.checked;
   delete rest.language;
   delete rest.wrap;
   delete rest.icon;
   delete rest.tone;
+  delete rest.databaseId;
 
   if (type === 'bulletList' || type === 'numberedList') {
     return {
@@ -227,6 +228,15 @@ export function cleanBlockProperties(
     };
   }
 
+  if (type === 'database') {
+    if (typeof properties.databaseId === 'string' && properties.databaseId.trim()) {
+      return {
+        databaseId: properties.databaseId.trim(),
+      };
+    }
+    return undefined;
+  }
+
   // paragraph, heading1-3, quote, divider
   if (type === 'divider') {
     return undefined;
@@ -238,7 +248,7 @@ export function cleanBlockProperties(
 /**
  * 对任意块节点执行数据契约归一化处理：
  * 保证列表块具有合法 level / checked、代码块具有合法 language / wrap、提示块具有合法 icon / tone，
- * 普通文本与引用块绝不残留无关属性。
+ * 数据库块保留合法 databaseId，普通文本与引用块绝不残留无关属性。
  */
 export function normalizeBlock(block: BlockNode): BlockNode {
   if (!block) return block;
@@ -287,6 +297,15 @@ export function normalizeBlock(block: BlockNode): BlockNode {
     return {
       ...block,
       properties: props,
+    };
+  }
+
+  if (block.type === 'database') {
+    const databaseId =
+      typeof block.properties?.databaseId === 'string' ? block.properties.databaseId.trim() : '';
+    return {
+      ...block,
+      properties: databaseId ? { databaseId } : undefined,
     };
   }
 

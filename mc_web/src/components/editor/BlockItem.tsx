@@ -15,6 +15,7 @@ import {
   Code,
   Quote,
   Lightbulb,
+  Table,
 } from 'lucide-react';
 import { BlockNode, BlockType } from '../../types/document';
 import { TextBlock } from './TextBlock';
@@ -23,6 +24,7 @@ import { BlockTypeSelector } from './BlockTypeSelector';
 import { CodeBlock } from './CodeBlock';
 import { QuoteBlock } from './QuoteBlock';
 import { CalloutBlock } from './CalloutBlock';
+import { DatabaseBlock } from './DatabaseBlock';
 import { cn } from '../../utils/cn';
 import { normalizeLevel, normalizeChecked } from '../../utils/blockUtils';
 
@@ -127,6 +129,8 @@ export const BlockItem: React.FC<BlockItemProps> = ({
         return <Quote className="w-3.5 h-3.5" />;
       case 'callout':
         return <Lightbulb className="w-3.5 h-3.5" />;
+      case 'database':
+        return <Table className="w-3.5 h-3.5" />;
       default:
         return <Pilcrow className="w-3.5 h-3.5" />;
     }
@@ -378,6 +382,18 @@ export const BlockItem: React.FC<BlockItemProps> = ({
             onSlashTrigger={onSlashTrigger}
             onSlashClose={onSlashClose}
             onSlashKeyDown={onSlashKeyDown}
+          />
+        );
+
+      case 'database':
+        return (
+          <DatabaseBlock
+            id={block.id}
+            databaseId={block.properties?.databaseId}
+            onUpdateProperties={onUpdateProperties}
+            onDelete={onDelete}
+            onFocusPrevious={onFocusPrevious}
+            onFocusNext={onFocusNext}
           />
         );
 
