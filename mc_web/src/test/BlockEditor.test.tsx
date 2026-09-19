@@ -2417,4 +2417,277 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(screen.getByTestId('database-block-fallback')).toBeInTheDocument();
     expect(screen.getByText(/多维数据库未找到或已被移除/)).toBeInTheDocument();
   });
+
+  it('59. [Day 9] DatabaseTable 表格结构渲染：列头（role="columnheader"）、手柄（data-resize-handle）、空状态引导（添加首行）', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('空测试表');
+    const docId = 'doc-db-day9-empty';
+    registerTestDoc(docId, [
+      {
+        id: 'b-empty-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 表格容器与 grid 语义
+    const grid = screen.getByRole('grid', { name: '多维数据库表格' });
+    expect(grid).toBeInTheDocument();
+
+    // 表头与列宽手柄
+    const columnHeaders = screen.getAllByRole('columnheader');
+    expect(columnHeaders.length).toBe(1);
+    expect(columnHeaders[0]).toHaveTextContent('标题');
+    const resizeHandle = screen.getByTestId(/column-resize-handle-/);
+    expect(resizeHandle).toBeInTheDocument();
+
+    // 空状态引导
+    expect(screen.getByText('暂无记录，点击下方按钮开始录入数据')).toBeInTheDocument();
+    const emptyAddBtn = screen.getByTestId('empty-add-row-btn');
+    expect(emptyAddBtn).toBeInTheDocument();
+
+    // 点击添加首行
+    act(() => {
+      fireEvent.click(emptyAddBtn);
+    });
+
+    const rows = screen.getAllByRole('row');
+    // 包含表头 1 行 + 数据行 1 行
+    expect(rows.length).toBe(2);
+    expect(screen.getByTestId('db-cell-0-0')).toHaveTextContent('记录 1');
+  });
+
+  it('60. [Day 9] 列宽 Pointer Events 拖拽与 120px ~ 600px 范围限制及单次 Store 提交', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('列宽测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    const docId = 'doc-db-day9-resize';
+    registerTestDoc(docId, [
+      {
+        id: 'b-resize-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const handle = screen.getByTestId(`column-resize-handle-${titlePropId}`);
+    expect(handle).toBeInTheDocument();
+
+    // 1. 模拟向右拖拽 +100px (220 + 100 = 320)
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 200, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 300, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: 300, pointerId: 1 });
+    });
+
+    let currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
+    expect(currentProp.width).toBe(320);
+
+    // 2. 模拟缩小超出下限 (-500px)，应受限为 MIN_COLUMN_WIDTH (120px)
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 300, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: -200, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: -200, pointerId: 1 });
+    });
+
+    currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
+    expect(currentProp.width).toBe(120);
+
+    // 3. 模拟放大超出上限 (+1000px)，应受限为 MAX_COLUMN_WIDTH (600px)
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 1200, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: 1200, pointerId: 1 });
+    });
+
+    currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
+    expect(currentProp.width).toBe(600);
+  });
+
+  it('61. [Day 9] title 与 text 单元格内联编辑：双击/Enter 进入编辑态，输入新值，Enter 提交并向下移动焦点，Tab 提交并向右移动，Escape 取消并保留原值', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('编辑测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    // 添加两行数据以测试向下导航
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '第一行初始标题' });
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '第二行初始标题' });
+    // 添加普通文本列以测试 Tab 导航
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '备注', type: 'text' });
+    const textPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    const docId = 'doc-db-day9-edit';
+    registerTestDoc(docId, [
+      {
+        id: 'b-edit-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    // 双击进入编辑态
+    act(() => {
+      fireEvent.doubleClick(cell00);
+    });
+
+    const input = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    expect(input).toBeInTheDocument();
+
+    // 输入新标题并按 Enter 提交
+    act(() => {
+      fireEvent.change(input, { target: { value: '已修改的第一行' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+
+    // 检查 Store 中数据已更新
+    const row0Id = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    expect(useWorkspaceStore.getState().databases[dbId].rows[row0Id].cells[titlePropId]).toBe('已修改的第一行');
+
+    // 焦点已向下转移到 (1, 0)
+    const cell10 = screen.getByTestId('db-cell-1-0');
+    expect(cell10).toHaveAttribute('tabindex', '0');
+
+    // 在 cell10 按 Enter 进入编辑态
+    act(() => {
+      fireEvent.keyDown(cell10, { key: 'Enter' });
+    });
+    const input2 = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input2, { target: { value: '通过Tab提交' } });
+      fireEvent.keyDown(input2, { key: 'Tab' });
+    });
+
+    const row1Id = useWorkspaceStore.getState().databases[dbId].rowOrder[1];
+    expect(useWorkspaceStore.getState().databases[dbId].rows[row1Id].cells[titlePropId]).toBe('通过Tab提交');
+
+    // 焦点转移到 (1, 1)（备注列）
+    const cell11 = screen.getByTestId('db-cell-1-1');
+    expect(cell11).toHaveAttribute('tabindex', '0');
+
+    // 在 cell11 编辑并按 Escape 取消
+    act(() => {
+      fireEvent.doubleClick(cell11);
+    });
+    const input3 = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input3, { target: { value: '未提交的废弃输入' } });
+      fireEvent.keyDown(input3, { key: 'Escape' });
+    });
+
+    // 验证未提交，依然为空或原有值
+    expect(useWorkspaceStore.getState().databases[dbId].rows[row1Id].cells[textPropId]).toBeUndefined();
+  });
+
+  it('62. [Day 9] 中文输入法 IME 合成保护：isComposing 期间按 Enter 不触发提交与退出', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('IME 测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '初始内容' });
+
+    const docId = 'doc-db-day9-ime';
+    registerTestDoc(docId, [
+      {
+        id: 'b-ime-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    act(() => {
+      fireEvent.doubleClick(cell00);
+    });
+
+    const input = screen.getByTestId('db-cell-input');
+
+    // 模拟中文输入法拼音输入中
+    act(() => {
+      fireEvent.compositionStart(input);
+      fireEvent.change(input, { target: { value: 'ceshi' } });
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    });
+
+    // 验证 input 仍处于编辑态，未退出编辑
+    expect(screen.getByTestId('db-cell-input')).toBeInTheDocument();
+
+    // 模拟输入法选词上屏完成
+    act(() => {
+      fireEvent.compositionEnd(input);
+      fireEvent.change(input, { target: { value: '测试完成' } });
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: false });
+    });
+
+    // 验证正常提交并退出编辑
+    expect(screen.queryByTestId('db-cell-input')).not.toBeInTheDocument();
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[titlePropId]).toBe('测试完成');
+  });
+
+  it('63. [Day 9] 键盘方向键 roving tabindex 单元格焦点流转与添加新行自动聚焦标题列', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('键盘导航测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '列2', type: 'text' });
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '行 1' });
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '行 2' });
+
+    const docId = 'doc-db-day9-nav';
+    registerTestDoc(docId, [
+      {
+        id: 'b-nav-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    // 点击聚焦 (0, 0)
+    act(() => {
+      fireEvent.click(cell00);
+    });
+    expect(cell00).toHaveAttribute('tabindex', '0');
+
+    // 按向右键 -> 移动到 (0, 1)
+    act(() => {
+      fireEvent.keyDown(cell00, { key: 'ArrowRight' });
+    });
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    expect(cell01).toHaveAttribute('tabindex', '0');
+    expect(cell00).toHaveAttribute('tabindex', '-1');
+
+    // 按向下键 -> 移动到 (1, 1)
+    act(() => {
+      fireEvent.keyDown(cell01, { key: 'ArrowDown' });
+    });
+    const cell11 = screen.getByTestId('db-cell-1-1');
+    expect(cell11).toHaveAttribute('tabindex', '0');
+
+    // 按向左键 -> 移动到 (1, 0)
+    act(() => {
+      fireEvent.keyDown(cell11, { key: 'ArrowLeft' });
+    });
+    const cell10 = screen.getByTestId('db-cell-1-0');
+    expect(cell10).toHaveAttribute('tabindex', '0');
+
+    // 点击顶栏添加行按钮
+    const addRowBtn = screen.getByTestId('db-add-row-btn');
+    act(() => {
+      fireEvent.click(addRowBtn);
+    });
+
+    // 验证新添加的第 3 行 (index 2) 标题列 (col 0) 自动聚焦
+    const cell20 = screen.getByTestId('db-cell-2-0');
+    expect(cell20).toBeInTheDocument();
+    expect(cell20).toHaveAttribute('tabindex', '0');
+  });
 });

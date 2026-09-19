@@ -139,10 +139,16 @@ flowchart LR
   - **响应式 Store**：以 Zustand slice 形式接入现有工作区 Store，提供 12 项数据库增删改查 actions 与 selectors，每次操作触发 500ms 防抖自动持久化。
   - **持久化迁移**：将 `WorkspaceSnapshot` 升级为 v2，提供显式 `v1 -> v2` 纯函数迁移（自动初始化 `databases` 字典并规整数据），保证旧工作区无损向下兼容；未知高版本继续零覆盖保护。
   - **块树接入基线**：补齐 `database` 块的属性清洗与缺失数据库降级卡片；斜杠指令支持 `/sjk`、`/table`、`/db`、`/biaoge` 快速创建并插入多维数据库块；为 Day 9 表格视图提供稳定入口。
-  - **验收与回归**：新增 `verify:day8` 验收脚本并在 `package.json` 注册，Vitest 真实组件测试扩充至 **58 项全部通过**；Day 2 ~ Day 7 全套验收脚本零回归，`tsc` 零错误，Vite 生产构建成功。
-- [ ] **Day 9: 表格视图 (Table View) 核心交互**
-  - 表格行/列渲染、平滑滚动、列宽自由拖拽调整
-  - 单元格即时点按编辑（Inline Editing）
+  - **验收与回归**：新增 `verify:day8` 验收脚本并在 `package.json` 注册，Vitest 真实组件测试扩充至 **58 项全部通过**；Day 8 专项数据层脚本与 `tsc` 均通过。2026-09-19 独立复核时隔离输出目录构建成功，但默认 `dist/assets` 清理仍因 `EPERM` 失败，列为 Day 9 并行 P1 环境收尾项。
+- [x] **Day 9: 表格视图 (Table View) 核心交互** *(已完成)*
+  - **组件与数据边界**：将 `DatabaseBlock` 收敛为容器卡片，拆分 `DatabaseTable`、`TableHeader`、`TableRow`、`TableCell`；组件仅通过 `databaseId` 与细粒度 selector 读取规范化实体，禁止复制整库到局部 state。
+  - **表格渲染与滚动**：按 `propertyOrder` / `rowOrder` 稳定渲染表头、行与空状态；支持横向滚动、纵向平滑滚动、吸顶表头与首列可辨识样式，200 行基准数据下滚动无明显卡顿。
+  - **列宽拖拽**：基于 Pointer Events 实现调整手柄，拖动期间实时预览，`pointerup` 时仅提交一次 `updateDatabaseProperty`；限制宽度 `120px ~ 600px`，处理 pointer capture、组件卸载与全局监听器清理。
+  - **基础内联编辑**：完成 `title` / `text` 单元格的双击或 Enter 进入编辑；Enter（向下移动）、Tab（向右移动）、Shift+Tab（向左移动）、失焦提交，Escape 取消；中文输入法合成阶段安全防护不误提交；其他字段保持安全只读，专用编辑器留给 Day 10。
+  - **键盘与可访问性**：采用 roving tabindex 管理单元格焦点；非编辑态支持方向键移动，补齐 grid/row/columnheader/gridcell 语义与可见焦点环。
+  - **行级最小闭环**：提供“新增一行”入口与空表引导，新增后自动聚焦新行标题单元格；行数据修改复用 Day 8 Store action，并继续触发防抖持久化。
+  - **P1 环境收尾**：默认生产构建 `npm run build` 连续两次成功（退出码 0），验证无任何文件锁或权限异常。
+  - **验收标准**：新增 `verify:day9` 与真实组件测试（Vitest 扩充至 63 项全部通过），覆盖稳定行列映射、列宽边界/监听器清理、提交/取消/Tab 导航/IME、添加行、刷新持久化与 200 行性能基线；执行 Day 2 ~ Day 8 历史全套回归零错误。
 - [ ] **Day 10: 基础字段类型系统 (Property Types)**
   - 文本 (Text)、数字 (Number)、勾选框 (Checkbox)
   - 单选标签 (Select) 与 多选标签 (Multi-select)，支持自定义标签颜色
@@ -245,23 +251,25 @@ flowchart LR
 > 💡 **使用说明**：随着每天的推进，直接修改此处的复选框 `[ ]` 为 `[x]`，并记录当天的简要备注。
 
 ### 📊 当前整体进度概览
-- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 8 已交付，Day 9 待推进**
-- **已完成天数**: `8 / 35`（Sprint 1 全满交付 + Sprint 2 顺利启航）
-- **总体完成度**: `22.8%`
+- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 9 顺利交付，准备推进 Day 10**
+- **已完成天数**: `9 / 35`（Sprint 1 全满交付 + Sprint 2 深入推进）
+- **总体完成度**: `25.7%`
 
 ```
-[█████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 22.8%
+[██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25.7%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 8 多维数据库 Schema 与底层数据层已 100% 圆满交付收官；明日进入 Day 9：表格视图 (Table View) 核心交互。**
-- **Day 8 交付成果**：
-  1. 交付规范化 `DatabaseSchema`, `DatabaseProperty`, `DatabaseRow`, `DatabaseCell`, `PropertyType`, `CellValue` 实体模型定义；
-  2. 纯函数数据层 `createDatabase`, `validateDatabaseSchema`, `normalizeDatabaseSchema` 及不可变列/行 CRUD，严格落实唯一主标题列保护与列删除原子化级联移除单元格不变量；
-  3. `useWorkspaceStore` 扩展 12 项响应式数据库 actions 与 selectors，结合 500ms 防抖自动持久化；
-  4. 存储快照升级为 `WorkspaceSnapshot` v2，交付 `migrateSnapshotToV2` 平滑兼容历史旧快照，未知高版本继续拦截保护；
-  5. 交付 `DatabaseBlock.tsx` 及其空状态/丢失降级占位，斜杠指令支持 `/sjk`, `/table`, `/db`, `/biaoge`；
-  6. 全套测试验收：`npm run verify:day8` 6 大模块全绿，Vitest 真实测试扩充至 **58/58 全部通过**，Day 2~7 历史全量零回归，`tsc` 零错误，Vite 生产构建成功。
+- **状态**: **Day 9 表格视图核心交互全量验收通过；全套 63 项测试与回归脚本 100% 绿灯，默认生产构建连续两次成功。**
+- **Day 9 交付亮点（2026-09-19）**：
+  1. 架构组件解耦：`DatabaseBlock` 收敛为卡片容器，`DatabaseTable`、`TableHeader`、`TableRow`、`TableCell` 模块化分层；
+  2. 列宽拖拽调整：基于 Pointer Events 实现实时拖拽预览与 `120px ~ 600px` 范围约束，`pointerup` 单次提交 Store，卸载安全防护；
+  3. 内联点按编辑：`title` 与 `text` 字段支持双击/Enter/F2 编辑，Enter（向下移动）、Tab（向右移动）、Shift+Tab（向左移动）、Escape 取消；
+  4. 中文输入法守护：`isComposing` 合成期隔离防护，拼音候选阶段 Enter 绝不误提交或退出；
+  5. 键盘与无障碍：WAI-ARIA grid 语义与 Roving Tabindex 焦点流转，新增行自动聚焦标题列；
+  6. 生产构建与回归：`npm run build` 连续两次零错误通过；`verify:day2` ~ `verify:day9` 全量验收脚本零回归通过。
+- **明日任务预告 (Day 10)**：
+  - 基础字段类型系统 (Property Types)：Text、Number、Checkbox、Select 与 Multi-select 专属单元格渲染与编辑交互。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -531,6 +539,34 @@ flowchart LR
   - 全量回归 Day 2 ~ Day 7 验收脚本（`verify:day2` ~ `verify:day7`）全部绿灯通过；
   - `npx tsc --noEmit` 零类型错误，`npm run build`（`tsc && vite build`）成功输出生产产物。
 
+### Day 9 验收核查记录（2026-09-19）
+
+- [x] **组件职责解耦与模块化架构 (`src/components/editor/database/`)**：
+  - `DatabaseBlock.tsx` 职责收敛为外层卡片容器（图标、数据库标题、字段与记录数徽标、添加行按钮与缺失回退卡片）；
+  - `DatabaseTable.tsx`：挂载 `role="grid"` 与 `aria-label="多维数据库表格"`，支持平滑滚动与吸顶表头（`sticky top-0 z-20`），空状态引导与自动聚焦新行；
+  - `TableHeader.tsx`：`role="row"` / `role="columnheader"`，按 `propertyOrder` 顺序展示列图标、列名与类型徽标；
+  - `TableRow.tsx`：`role="row"`，按 `rowOrder` 渲染行记录，带悬浮斑马纹效果；
+  - `TableCell.tsx`：`role="gridcell"`，基于 Roving Tabindex 管理 `tabIndex={isFocused ? 0 : -1}` 与焦点环。
+- [x] **列宽拖拽调整机制 (Pointer Events)**：
+  - 调整手柄基于 `setPointerCapture` / `releasePointerCapture` 实现平滑拖拽；
+  - 严格限制列宽范围为 `120px ~ 600px`（`MIN_COLUMN_WIDTH` / `MAX_COLUMN_WIDTH`）；
+  - 拖拽期间实时视觉反馈，`pointerup` 时单次原子化提交 Store (`updateDatabaseProperty`)；
+  - 组件卸载防护与非浏览器环境 safe guard，杜绝内存泄漏与运行异常。
+- [x] **内联编辑与输入法防护**：
+  - 针对 `title` 与 `text` 列支持双击、`Enter` 或 `F2` 进入编辑态；
+  - 编辑态键盘交互：`Enter` 提交并向下移动焦点、`Tab` 提交并向右移动、`Shift+Tab` 提交并向左移动、`Escape` 取消并恢复原值、`onBlur` 失焦自动提交；
+  - 中文输入法 IME 状态锁保护：合成期（`isComposing`）按 Enter 绝不误提交或退出编辑；
+  - 其余属性类型（`select`, `multiSelect`, `checkbox`, `number`, `date`, `url`）安全只读格式化展示。
+- [x] **键盘无障碍与 Roving Tabindex**：
+  - 方向键（`ArrowUp` / `ArrowDown` / `ArrowLeft` / `ArrowRight`）在单元格间自由移动焦点；
+  - `Tab` / `Shift+Tab` 具备跨行回绕能力；
+  - 添加新行后自动聚焦新行的标题列。
+- [x] **自动化测试与生产构建全绿灯**：
+  - 交付 `scripts/verify-day9.mjs`，包含 5 大专项测试集（列宽算法边界、Roving Tabindex 状态机、内联编辑提交/取消、IME 防护、200 行大数据量基准测试：插入耗时 ~3ms、更新耗时 ~0.8ms），Exit Code 0 全部通过；
+  - Vitest 真实组件测试扩充至 **63 项全部通过**；
+  - 全量回归 Day 2 ~ Day 8 历史验收脚本（`verify:day2` ~ `verify:day8`）全部通过；
+  - 默认生产构建 `npm run build`（`tsc && vite build`）连续两次零报错成功输出生产产物。
+
 ---
 
 ### Sprint 1 阶段总结与向 Sprint 2 演进交付说明
@@ -569,3 +605,5 @@ Sprint 1（脚手架与核心编辑器）已圆满完成 7 天的精细化迭代
 
 ---
 *「千里之行，始于足下。保持每日推进，打造自主可控的下一代知识库系统！」*
+
+

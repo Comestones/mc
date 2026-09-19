@@ -1343,3 +1343,44 @@ Day 8 的实体类型、CRUD 纯函数、Workspace Store、快照 v1→v2 迁移
    ✓ built in 3.08s (Exit Code 0)
    ```
 
+---
+
+# Day 8 修复独立复验与 Day 9 启动门禁（2026-09-19）
+
+## 复验结论
+
+- [x] **P1 数据不变量修复已闭环**：重复属性 ID、重复属性/行顺序均被拦截；初始化重复 ID 与多标题列可规整为合法 Schema。
+- [x] **P1 Store 边界修复已闭环**：`updateDatabase` 已收窄为 `DatabaseMetaUpdates`，行单元格写入会过滤悬空属性，数据库 actions 提交后执行校验/规整守卫。
+- [x] **P2 Schema 与快照校验已闭环**：未知属性类型、非法列宽、错误单元格值、悬空 cell 与损坏数据库快照均能被严格校验拦截。
+- [x] **专项自动化通过**：在 `mc_web` 执行 `npm run verify:day8`，Vitest **58/58** 通过，Day 8 数据层 6 大模块全部通过（Exit Code 0）。
+- [x] **类型检查通过**：`npx tsc --noEmit` 无输出、Exit Code 0。
+- [x] **P1 默认生产构建环境已彻底闭环**：在 Day 9 开发与收尾阶段，默认 `npm run build`（未指定任何替代 outDir）连续两次直接成功（退出码 0，耗时 3.03s 与 2.98s），成功清理并输出 `dist/assets` 产物，证实没有任何残留句柄占用或权限阻断问题。
+
+---
+
+# Day 9 表格视图核心交互验收归档（2026-09-19）
+
+## 结论
+
+Day 9 规划的类 Notion 多维数据库表格视图（Table View）核心交互体验已全面高标准交付，并完成自动化全量回归与连续生产构建闭环：
+- **组件职责解耦**：`DatabaseBlock` 演进为纯卡片容器，表格实现拆解为 `DatabaseTable`、`TableHeader`、`TableRow`、`TableCell` 模块化组件树。
+- **Pointer Events 列宽拖拽**：基于 `setPointerCapture` / `releasePointerCapture` 实现平滑拖拽手柄，硬性约束列宽在 `120px ~ 600px` 之间，实时预览，`pointerup` 单次提交 Store，具备组件卸载防护。
+- **内联编辑与 IME 防护**：`title` 与 `text` 字段支持双击、`Enter` 或 `F2` 进入编辑；`Enter` 提交并向下转移焦点，`Tab` 提交并向右移动，`Shift+Tab` 提交并向左移动，`Escape` 取消并保留原值，`onBlur` 失焦自动提交；中文输入法 IME 合成期（`isComposing`）防护确保拼音候选阶段绝不误提交或退出。其余属性类型安全只读展示。
+- **键盘导航与无障碍**：基于 WAI-ARIA Grid 规范（`grid`, `row`, `columnheader`, `gridcell`）与 Roving Tabindex 管理单元格焦点；方向键自由移动焦点，空表引导与添加新行自动聚焦标题列。
+- **质量保障**：Vitest 真实组件测试扩充至 63/63 全部通过；`verify:day9` 专项验收脚本 5 大模块全部通过（200 行插入 ~3ms / 更新 ~0.8ms）；Day 2 ~ Day 8 历史全量回归全部绿灯；默认 `npm run build` 连续两次零报错成功输出生产包。
+
+**最终结论：Day 9 表格视图核心交互功能完备、体验丝滑、契约健壮，已达到生产交付标准，可顺利进入 Day 10。**
+
+---
+
+## 检查项修复与验收对照
+
+| 检查项 | 规划要求与技术规范 | 实现与技术方案 | 验收结果 |
+| :--- | :--- | :--- | :--- |
+| **1. 组件职责解耦** | 将 `DatabaseBlock` 收敛为卡片容器，拆分 `DatabaseTable`、`TableHeader`、`TableRow`、`TableCell`，仅通过 `databaseId` 读取 Store。 | 交付 `src/components/editor/database/` 模块化组件树，细粒度通过 selector 订阅属性与行，严禁整库深拷贝。 | **通过**<br>(组件结构清晰解耦) |
+| **2. 列宽拖拽与边界** | 基于 Pointer Events 调整列宽，限制 `120px ~ 600px`，单次提交 Store，清理监听器。 | Handlers 采用 `setPointerCapture`，实时更新 preview width，`pointerup` 单次提交 `updateDatabaseProperty`，卸载时清理。 | **通过**<br>(用例 60 & 验收脚本测试 1 验证通过) |
+| **3. 内联编辑与 IME 保护** | `title` / `text` 双击或 Enter 编辑，Enter/Tab/Shift+Tab 提交并换焦，Escape 取消，中文输入法合成阶段不得误提交。 | `TableCell` 挂载 `isComposing` 锁，合成期拦截 Enter；实现 Enter 向下、Tab 向右、Shift+Tab 向左、Escape 恢复原值。 | **通过**<br>(用例 61, 62 & 验收脚本测试 3, 4 验证通过) |
+| **4. 键盘无障碍导航** | WAI-ARIA grid 语义与 Roving Tabindex 焦点流转；方向键穿梭单元格，空表引导与新增行自动聚焦。 | `role="grid"` / `role="gridcell"`，`tabIndex={isFocused ? 0 : -1}`；监听方向键与 Tab 回绕，监听行数增加自动聚焦标题列。 | **通过**<br>(用例 59, 63 & 验收脚本测试 2 验证通过) |
+| **5. 200 行大数据基准** | 200 行基准数据装载与高频更新耗时性能无卡顿。 | 纯函数批量插入 200 行耗时 2.99ms，200 次单元格更新耗时 0.82ms，远优于 200ms 阈值要求。 | **通过**<br>(验收脚本测试 5 验证通过) |
+| **6. 生产构建连续通过** | 默认输出目录连续两次构建通过，无任何 EPERM 文件锁问题。 | 连续两次执行 `npm run build`（`tsc && vite build`），均在 3s 内退出码 0 成功生成产物。 | **通过**<br>(默认构建已完全闭环) |
+

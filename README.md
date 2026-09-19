@@ -70,12 +70,18 @@
   - **响应式 Store 与自动保存**：在 `useWorkspaceStore.ts` 扩展 `databases` 状态切片与 12 项增删改查 actions/selectors，原子化接入 500ms 防抖持久化管道。
   - **快照 v1 -> v2 平滑迁移**：升级 `WorkspaceSnapshot` 至版本 2，交付 `migrateSnapshotToV2` 兼容旧版快照，拦截未知未来高版本。
   - **Block 树基线与斜杠指令**：交付 `DatabaseBlock.tsx` 及其未找到回退占位卡片；斜杠指令支持 `/sjk`, `/table`, `/db`, `/biaoge` 秒级唤出并关联新数据库。
-  - **全量测试与回归**：新增 `scripts/verify-day8.mjs`（6 大模块验收全部通过），Vitest 组件测试扩充至 **58 项全部通过**，Day 2~7 历史全量验收脚本零回归，生产构建零错误打包成功。
+  - **全量测试与回归**：新增 `scripts/verify-day8.mjs`（6 大模块验收全部通过），Vitest 组件测试扩充至 58 项全部通过，Day 2~7 历史全量验收脚本零回归，生产构建零错误打包成功。
+- **Day 9 表格视图 (Table View) 核心交互 (Table Component Architecture & Interaction)**：
+  - **组件架构解耦**：将 `DatabaseBlock.tsx` 拆分为模块化组件树（`DatabaseTable.tsx`、`TableHeader.tsx`、`TableRow.tsx`、`TableCell.tsx`），严格通过 `databaseId` 与细粒度 selector 订阅状态，杜绝复制整库到局部 state。
+  - **Pointer Events 列宽拖拽**：实现平滑调整手柄，动态约束宽度在 `120px ~ 600px`（`MIN_COLUMN_WIDTH` / `MAX_COLUMN_WIDTH`）；拖拽期间实时视觉反馈，`pointerup` 时单次原子化提交 Store，提供组件卸载安全防护。
+  - **内联编辑与 IME 防护**：`title` 与 `text` 字段支持双击、`Enter` 或 `F2` 进入编辑态；`Enter` 提交并向下转移焦点，`Tab` 提交并向右移动，`Shift+Tab` 提交并向左移动，`Escape` 取消并保留原值，`onBlur` 失焦提交；挂载 `isComposing` 输入法合成锁，拼音候选阶段绝不误提交或退出。
+  - **无障碍与 Roving Tabindex**：完整支持 WAI-ARIA `grid`, `row`, `columnheader`, `gridcell` 语义；方向键自由穿梭单元格，空表引导与新增行自动聚焦标题列。
+  - **全量测试与回归**：新增 `scripts/verify-day9.mjs`（5 大核心交互验收全部通过，200 行插入 ~3ms、更新 ~0.8ms），Vitest 扩充至 **63 项全部通过**，全套历史回归零错误，生产构建连续两次成功。
 
 ## 🎯 下一阶段：Sprint 2 (多维数据库引擎与三重视图，Day 8 - 14)
 
 - **Day 8**：多维数据库 Schema 设计与底层数据层 *(已完成)*。
-- **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑。
+- **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑 *(已完成)*。
 - **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect)。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
@@ -88,7 +94,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（58 项全部通过，0 警告 0 报错）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（63 项全部通过，0 警告 0 报错）。
+- 执行 `npm run verify:day9` 运行 Day 9 表格视图核心交互验收。
 - 执行 `npm run verify:day8` 运行 Day 8 多维数据库 Schema 与底层数据层验收。
 - 执行 `npm run verify:day7` 运行 Day 7 本地离线持久化与数据完整性验收。
 - 执行 `npm run verify:day6` 运行 Day 6 块级拖拽重排与批量操作验收。

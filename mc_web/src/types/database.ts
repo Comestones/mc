@@ -15,6 +15,13 @@ export const VALID_PROPERTY_TYPES = [
 export type PropertyType = (typeof VALID_PROPERTY_TYPES)[number];
 
 /**
+ * 表格列宽边界约束常量
+ */
+export const MIN_COLUMN_WIDTH = 120;
+export const MAX_COLUMN_WIDTH = 600;
+export const DEFAULT_COLUMN_WIDTH = 180;
+
+/**
  * 标签选项定义（适用于 select 和 multiSelect）
  */
 export interface SelectOption {
