@@ -1,15 +1,18 @@
 /**
  * 多维数据库属性类型枚举定义
  */
-export type PropertyType =
-  | 'title'       // 唯一标题列（主键名称）
-  | 'text'        // 普通文本
-  | 'number'      // 数字
-  | 'select'      // 单选标签
-  | 'multiSelect' // 多选标签
-  | 'checkbox'    // 勾选框
-  | 'date'        // 日期
-  | 'url';        // 超链接
+export const VALID_PROPERTY_TYPES = [
+  'title',       // 唯一标题列（主键名称）
+  'text',        // 普通文本
+  'number',      // 数字
+  'select',      // 单选标签
+  'multiSelect', // 多选标签
+  'checkbox',    // 勾选框
+  'date',        // 日期
+  'url',         // 超链接
+] as const;
+
+export type PropertyType = (typeof VALID_PROPERTY_TYPES)[number];
 
 /**
  * 标签选项定义（适用于 select 和 multiSelect）
@@ -19,6 +22,13 @@ export interface SelectOption {
   name: string;
   color?: string;
 }
+
+/**
+ * 数据库元信息更新类型（限制 updateDatabase 仅可更新元信息，禁止绕过 CRUD 篡改结构）
+ */
+export type DatabaseMetaUpdates = Partial<
+  Pick<DatabaseSchema, 'title' | 'icon' | 'description'>
+>;
 
 /**
  * 数据库列属性定义

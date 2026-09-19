@@ -2,7 +2,7 @@ import type { DatabaseSchema } from '../types/database.ts';
 import type { DocumentItem } from '../types/document.ts';
 import type { WorkspaceMeta } from '../types/workspace.ts';
 import { normalizeBlock } from './blockUtils.ts';
-import { normalizeDatabaseSchema } from './databaseUtils.ts';
+import { normalizeDatabaseSchema, validateDatabaseSchema } from './databaseUtils.ts';
 import { repairPageTree } from './workspaceUtils.ts';
 
 export const SNAPSHOT_SCHEMA_VERSION = 2;
@@ -110,7 +110,7 @@ export function validateWorkspaceSnapshot(
   if (s.theme !== 'light' && s.theme !== 'dark') return false;
   if (typeof s.isSidebarCollapsed !== 'boolean') return false;
 
-  // 6. 数据库实体表校验（v1 可选，v2+ 若存在则必须是合法对象映射）
+  // 6. 数据库实体表校验（v1 可选，v2+ 若存在则必须是合法对象映射且每个数据库均通过严格 Schema 校验）
   if (s.databases !== undefined) {
     if (!s.databases || typeof s.databases !== 'object' || Array.isArray(s.databases)) {
       return false;
@@ -118,6 +118,7 @@ export function validateWorkspaceSnapshot(
     for (const [dbId, db] of Object.entries(s.databases)) {
       if (!db || typeof db !== 'object') return false;
       if (db.id !== dbId) return false;
+      if (!validateDatabaseSchema(db)) return false;
     }
   }
 

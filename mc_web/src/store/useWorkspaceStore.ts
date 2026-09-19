@@ -6,11 +6,14 @@ import type {
   DatabaseProperty,
   DatabaseRow,
   CellValue,
+  DatabaseMetaUpdates,
 } from '../types/database';
 import { normalizeBlock } from '../utils/blockUtils';
 import { cascadeDeletePage } from '../utils/workspaceUtils';
 import {
   createDatabase,
+  validateDatabaseSchema,
+  normalizeDatabaseSchema,
   addProperty,
   updateProperty,
   deleteProperty,
@@ -70,7 +73,7 @@ interface WorkspaceState {
   // Day 8: 多维数据库数据层
   databases: Record<string, DatabaseSchema>;
   createDatabase: (title?: string, initialProperties?: DatabaseProperty[]) => string;
-  updateDatabase: (id: string, updates: Partial<DatabaseSchema>) => void;
+  updateDatabase: (id: string, updates: DatabaseMetaUpdates) => void;
   deleteDatabase: (id: string) => void;
   addDatabaseProperty: (databaseId: string, property: Omit<DatabaseProperty, 'id'> & { id?: string }) => void;
   updateDatabaseProperty: (databaseId: string, propertyId: string, updates: Partial<DatabaseProperty>) => void;
@@ -521,29 +524,33 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     createDatabase: (title = '未命名数据库', initialProperties?: DatabaseProperty[]) => {
       const db = createDatabase(title, initialProperties);
+      const safeDb = validateDatabaseSchema(db) ? db : normalizeDatabaseSchema(db);
       set((state) => ({
         databases: {
           ...state.databases,
-          [db.id]: db,
+          [safeDb.id]: safeDb,
         },
       }));
       scheduleAutoSave(get, set, false);
-      return db.id;
+      return safeDb.id;
     },
 
-    updateDatabase: (id: string, updates: Partial<DatabaseSchema>) => {
+    updateDatabase: (id: string, updates: DatabaseMetaUpdates) => {
       set((state) => {
         const existing = state.databases[id];
         if (!existing) return state;
+        const nextDb: DatabaseSchema = {
+          ...existing,
+          title: typeof updates.title === 'string' ? updates.title : existing.title,
+          icon: updates.icon !== undefined ? updates.icon : existing.icon,
+          description: updates.description !== undefined ? updates.description : existing.description,
+          updatedAt: Date.now(),
+        };
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [id]: {
-              ...existing,
-              ...updates,
-              id,
-              updatedAt: Date.now(),
-            },
+            [id]: safeDb,
           },
         };
       });
@@ -564,10 +571,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = addProperty(db, property);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: addProperty(db, property),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -578,10 +587,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = updateProperty(db, propertyId, updates);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: updateProperty(db, propertyId, updates),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -592,10 +603,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = deleteProperty(db, propertyId);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: deleteProperty(db, propertyId),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -606,10 +619,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = reorderProperties(db, newOrder);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: reorderProperties(db, newOrder),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -620,10 +635,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = addRow(db, initialCells, atIndex);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: addRow(db, initialCells, atIndex),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -634,10 +651,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = updateRow(db, rowId, updates);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: updateRow(db, rowId, updates),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -648,10 +667,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = updateCell(db, rowId, propertyId, value);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: updateCell(db, rowId, propertyId, value),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -662,10 +683,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = deleteRow(db, rowId);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: deleteRow(db, rowId),
+            [databaseId]: safeDb,
           },
         };
       });
@@ -676,10 +699,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
+        const nextDb = reorderRows(db, newOrder);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
             ...state.databases,
-            [databaseId]: reorderRows(db, newOrder),
+            [databaseId]: safeDb,
           },
         };
       });

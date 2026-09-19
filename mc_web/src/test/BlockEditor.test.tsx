@@ -25,9 +25,11 @@ import {
   addProperty,
   updateProperty,
   deleteProperty,
+  reorderProperties,
   addRow,
   updateCell,
   deleteRow,
+  reorderRows,
 } from '../utils/databaseUtils';
 
 // 辅助函数：在 contenteditable 元素中定位光标
@@ -2219,6 +2221,12 @@ describe('BlockEditor Component & Store Integration', () => {
     const tagColId = db.propertyOrder[1];
     expect(db.properties[tagColId].name).toBe('标签');
 
+    // P1: 添加重复 ID 必须抛出异常
+    expect(() => addProperty(db, { id: tagColId, name: '重复列', type: 'text' })).toThrow(/already exists/);
+
+    // P1: 重排属性列包含重复项必须抛出异常
+    expect(() => reorderProperties(db, [tagColId, tagColId])).toThrow(/Invalid property order permutation/);
+
     // 添加行
     db = addRow(db, {
       [db.propertyOrder[0]]: '项目 1',
@@ -2227,9 +2235,33 @@ describe('BlockEditor Component & Store Integration', () => {
     const rowId = db.rowOrder[0];
     expect(db.rows[rowId].cells[tagColId]).toBe('opt-1');
 
+    // P1: 重排行包含重复项必须抛出异常
+    expect(() => reorderRows(db, [rowId, rowId])).toThrow(/Invalid row order permutation/);
+
     // 保护 title 列不可更改类型与不可删除
     expect(() => updateProperty(db, db.propertyOrder[0], { type: 'text' })).toThrow();
     expect(() => deleteProperty(db, db.propertyOrder[0])).toThrow();
+
+    // P2: 未知属性类型与悬空 cell 校验拦截
+    expect(
+      validateDatabaseSchema({
+        ...db,
+        properties: { ...db.properties, 'p-bad': { id: 'p-bad', name: 'bad', type: 'made-up' as any } },
+        propertyOrder: [...db.propertyOrder, 'p-bad'],
+      })
+    ).toBe(false);
+
+    expect(
+      validateDatabaseSchema({
+        ...db,
+        rows: {
+          [rowId]: {
+            ...db.rows[rowId],
+            cells: { ...db.rows[rowId].cells, 'ghost-cell': 'val' },
+          },
+        },
+      })
+    ).toBe(false);
 
     // 删除普通列：级联清除所有 row 对应的 cell
     db = deleteProperty(db, tagColId);
@@ -2243,6 +2275,7 @@ describe('BlockEditor Component & Store Integration', () => {
     // 规整自愈
     const healed = normalizeDatabaseSchema(db);
     expect(healed.id).toBe(db.id);
+    expect(validateDatabaseSchema(healed)).toBe(true);
 
     // 删除行
     db = deleteRow(db, rowId);
@@ -2250,7 +2283,7 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(db.rowOrder.length).toBe(0);
   });
 
-  it('56. [Day 8] Zustand 工作区 Store 数据库 Slice 响应式操作与自动保存', async () => {
+  it('56. [Day 8] Zustand 工作区 Store 数据库 Slice 响应式操作与自动保存，保证所有 Action 后 Schema 严格合法', async () => {
     const memoryStorage = new MemoryStorage(null, { isPersistent: true });
     useWorkspaceStore.getState().setStorageAdapter(memoryStorage);
 
@@ -2261,14 +2294,44 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(dbId).toBeTruthy();
     expect(useWorkspaceStore.getState().databases[dbId]).toBeDefined();
 
+    // P1: updateDatabase 仅可更新元数据，传入其他字段不破坏内部结构
+    act(() => {
+      useWorkspaceStore.getState().updateDatabase(dbId, {
+        title: '新标题',
+        icon: '🎯',
+        description: '新描述',
+      });
+    });
+    let currentDb = useWorkspaceStore.getState().getDatabase(dbId)!;
+    expect(currentDb.title).toBe('新标题');
+    expect(currentDb.icon).toBe('🎯');
+    expect(validateDatabaseSchema(currentDb)).toBe(true);
+
+    // 添加属性与行
     act(() => {
       useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '优先级', type: 'select' });
       useWorkspaceStore.getState().addDatabaseRow(dbId);
     });
 
-    const currentDb = useWorkspaceStore.getState().getDatabase(dbId);
-    expect(currentDb?.propertyOrder.length).toBe(2);
-    expect(currentDb?.rowOrder.length).toBe(1);
+    currentDb = useWorkspaceStore.getState().getDatabase(dbId)!;
+    expect(currentDb.propertyOrder.length).toBe(2);
+    expect(currentDb.rowOrder.length).toBe(1);
+    expect(validateDatabaseSchema(currentDb)).toBe(true);
+
+    // P1: updateDatabaseRow 过滤悬空属性
+    const rowId = currentDb.rowOrder[0];
+    act(() => {
+      useWorkspaceStore.getState().updateDatabaseRow(dbId, rowId, {
+        cells: {
+          [currentDb.propertyOrder[0]]: '任务 A',
+          'ghost-prop': 'should-be-filtered',
+        },
+      });
+    });
+    currentDb = useWorkspaceStore.getState().getDatabase(dbId)!;
+    expect(currentDb.rows[rowId].cells['ghost-prop']).toBeUndefined();
+    expect(currentDb.rows[rowId].cells[currentDb.propertyOrder[0]]).toBe('任务 A');
+    expect(validateDatabaseSchema(currentDb)).toBe(true);
 
     // 验证自动保存触发
     await act(async () => {
@@ -2278,10 +2341,10 @@ describe('BlockEditor Component & Store Integration', () => {
 
     const loaded = await memoryStorage.load();
     expect(loaded?.databases?.[dbId]).toBeDefined();
-    expect(loaded?.databases?.[dbId].title).toBe('响应式测试库');
+    expect(loaded?.databases?.[dbId].title).toBe('新标题');
   });
 
-  it('57. [Day 8] 快照向后兼容升级：v1 快照无缝迁移至 v2，databases 字典自愈并拦截非法高版本', () => {
+  it('57. [Day 8] 快照向后兼容升级：v1 快照无缝迁移至 v2，databases 字典自愈并拦截非法高版本与损坏数据库', () => {
     const v1Snapshot: any = {
       version: 1,
       timestamp: Date.now(),
@@ -2299,6 +2362,27 @@ describe('BlockEditor Component & Store Integration', () => {
 
     // 未来更高版本应被拒绝
     expect(validateWorkspaceSnapshot({ ...v1Snapshot, version: SNAPSHOT_SCHEMA_VERSION + 1 })).toBe(false);
+
+    // P2: 快照中包含损坏数据库时，validateWorkspaceSnapshot 必须拦截
+    const corruptSnapshot: any = {
+      ...v1Snapshot,
+      version: 2,
+      databases: {
+        'corrupt-db': {
+          id: 'corrupt-db',
+          title: '受损库',
+          createdAt: 100,
+          updatedAt: 100,
+          properties: {
+            'prop-bad': { id: 'prop-bad', name: 'bad', type: 'made-up' },
+          },
+          propertyOrder: ['prop-bad'],
+          rows: {},
+          rowOrder: [],
+        },
+      },
+    };
+    expect(validateWorkspaceSnapshot(corruptSnapshot)).toBe(false);
   });
 
   it('58. [Day 8] DatabaseBlock 渲染集成与回退容错：有效数据库渲染标题与字段徽标，丢失时展示回退卡片', () => {

@@ -1,12 +1,38 @@
-import type {
-  DatabaseSchema,
-  DatabaseProperty,
-  DatabaseRow,
-  CellValue,
-  PropertyType,
+import {
+  VALID_PROPERTY_TYPES,
+  type DatabaseSchema,
+  type DatabaseProperty,
+  type DatabaseRow,
+  type CellValue,
+  type PropertyType,
+  type SelectOption,
 } from '../types/database.ts';
 
 export const DEFAULT_TITLE_PROPERTY_ID = 'prop-title';
+
+/**
+ * 校验单元格值形态是否符合属性类型契约
+ */
+export function validateCellValue(val: unknown, type: PropertyType): boolean {
+  if (val === null || val === undefined) return true;
+  switch (type) {
+    case 'title':
+    case 'text':
+    case 'date':
+    case 'url':
+      return typeof val === 'string';
+    case 'number':
+      return typeof val === 'number' && Number.isFinite(val);
+    case 'checkbox':
+      return typeof val === 'boolean';
+    case 'select':
+      return typeof val === 'string';
+    case 'multiSelect':
+      return Array.isArray(val) && val.every((item) => typeof item === 'string');
+    default:
+      return false;
+  }
+}
 
 /**
  * 创建新多维数据库实体，默认包含唯一必需的标题列 (title)
@@ -20,33 +46,49 @@ export function createDatabase(
 
   const properties: Record<string, DatabaseProperty> = {};
   const propertyOrder: string[] = [];
+  const usedIds = new Set<string>();
 
   let hasTitle = false;
   if (initialProperties && initialProperties.length > 0) {
     for (const prop of initialProperties) {
+      // 保证 ID 唯一，杜绝重复 ID 破坏字典或排序
+      let propId = prop.id;
+      if (!propId || usedIds.has(propId)) {
+        propId = `prop-${now}-${Math.random().toString(36).substring(2, 6)}`;
+      }
+      usedIds.add(propId);
+
       if (prop.type === 'title') {
         if (!hasTitle) {
-          properties[prop.id] = { ...prop, width: prop.width ?? 220 };
-          propertyOrder.push(prop.id);
+          properties[propId] = { ...prop, id: propId, width: prop.width ?? 220 };
+          propertyOrder.push(propId);
           hasTitle = true;
+        } else {
+          // 已经有 title，后续 title 降级为 text，维持唯一 title 列不变量
+          properties[propId] = { ...prop, id: propId, type: 'text', width: prop.width ?? 180 };
+          propertyOrder.push(propId);
         }
       } else {
-        properties[prop.id] = { ...prop, width: prop.width ?? 180 };
-        propertyOrder.push(prop.id);
+        properties[propId] = { ...prop, id: propId, width: prop.width ?? 180 };
+        propertyOrder.push(propId);
       }
     }
   }
 
   // 保证数据库必须拥有一个标题列
   if (!hasTitle) {
+    let titlePropId = DEFAULT_TITLE_PROPERTY_ID;
+    if (usedIds.has(titlePropId)) {
+      titlePropId = `prop-title-${Math.random().toString(36).substring(2, 6)}`;
+    }
     const titleProp: DatabaseProperty = {
-      id: DEFAULT_TITLE_PROPERTY_ID,
+      id: titlePropId,
       name: '名称',
       type: 'title',
       width: 220,
     };
-    properties[DEFAULT_TITLE_PROPERTY_ID] = titleProp;
-    propertyOrder.unshift(DEFAULT_TITLE_PROPERTY_ID);
+    properties[titlePropId] = titleProp;
+    propertyOrder.unshift(titlePropId);
   }
 
   return {
@@ -65,9 +107,11 @@ export function createDatabase(
 
 /**
  * 严格校验数据库 Schema 契约与完整性不变量：
- * 1. 结构与必要属性健全；
+ * 1. 结构与必要属性健全，时间戳有限；
  * 2. 必须包含且仅包含 1 个 title 类型的属性列；
- * 3. propertyOrder 与 rowOrder 必须与对应字典中的键严格 1:1 对应无重复、无遗漏、无悬空。
+ * 3. 属性类型必须为合法的 PropertyType 白名单枚举，宽度与选项结构合法；
+ * 4. propertyOrder 与 rowOrder 必须与对应字典中的键严格 1:1 对应无重复、无遗漏、无悬空；
+ * 5. 行内 cells 禁止包含未在 properties 中声明的悬空属性，且值形态必须符合类型契约。
  */
 export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
   if (!data || typeof data !== 'object') return false;
@@ -75,7 +119,14 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
 
   if (typeof db.id !== 'string' || !db.id) return false;
   if (typeof db.title !== 'string') return false;
-  if (typeof db.createdAt !== 'number' || typeof db.updatedAt !== 'number') return false;
+  if (
+    typeof db.createdAt !== 'number' ||
+    !Number.isFinite(db.createdAt) ||
+    typeof db.updatedAt !== 'number' ||
+    !Number.isFinite(db.updatedAt)
+  ) {
+    return false;
+  }
 
   // 校验 properties 与 propertyOrder
   if (!db.properties || typeof db.properties !== 'object') return false;
@@ -88,15 +139,38 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
   const propSet = new Set(db.propertyOrder);
   if (propSet.size !== db.propertyOrder.length) return false; // 重复检测
 
+  const validTypesSet = new Set<string>(VALID_PROPERTY_TYPES);
   let titleCount = 0;
   for (const [propId, prop] of Object.entries(db.properties)) {
     if (!prop || typeof prop !== 'object') return false;
-    if (prop.id !== propId || typeof prop.name !== 'string' || typeof prop.type !== 'string') {
+    if (
+      prop.id !== propId ||
+      typeof prop.name !== 'string' ||
+      typeof prop.type !== 'string' ||
+      !validTypesSet.has(prop.type)
+    ) {
       return false;
     }
     if (!propSet.has(propId)) return false;
     if (prop.type === 'title') {
       titleCount++;
+    }
+
+    // 校验 width（若指定则必须为有限正数）
+    if (prop.width !== undefined) {
+      if (typeof prop.width !== 'number' || !Number.isFinite(prop.width) || prop.width <= 0) {
+        return false;
+      }
+    }
+
+    // 校验 options（若指定则必须为合法 SelectOption 数组）
+    if (prop.options !== undefined) {
+      if (!Array.isArray(prop.options)) return false;
+      for (const opt of prop.options) {
+        if (!opt || typeof opt !== 'object') return false;
+        if (typeof opt.id !== 'string' || typeof opt.name !== 'string') return false;
+        if (opt.color !== undefined && typeof opt.color !== 'string') return false;
+      }
     }
   }
 
@@ -116,8 +190,25 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
   for (const [rowId, row] of Object.entries(db.rows)) {
     if (!row || typeof row !== 'object') return false;
     if (row.id !== rowId || row.databaseId !== db.id) return false;
+    if (
+      typeof row.createdAt !== 'number' ||
+      !Number.isFinite(row.createdAt) ||
+      typeof row.updatedAt !== 'number' ||
+      !Number.isFinite(row.updatedAt)
+    ) {
+      return false;
+    }
     if (!row.cells || typeof row.cells !== 'object') return false;
     if (!rowSet.has(rowId)) return false;
+
+    // 校验 cells：禁止包含未在 properties 中声明的悬空属性，且值形态必须符合类型契约
+    for (const [cellPropId, cellValue] of Object.entries(row.cells)) {
+      if (!propSet.has(cellPropId)) return false; // 悬空属性直接拦截
+      const propDef = db.properties[cellPropId];
+      if (!validateCellValue(cellValue, propDef.type)) {
+        return false; // 非法单元格值形态拦截
+      }
+    }
   }
 
   return true;
@@ -132,7 +223,50 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
 export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchema {
   if (!database) return database;
 
-  const properties: Record<string, DatabaseProperty> = { ...database.properties };
+  const now = Date.now();
+  const dbCreatedAt =
+    typeof database.createdAt === 'number' && Number.isFinite(database.createdAt)
+      ? database.createdAt
+      : now;
+  const dbUpdatedAt =
+    typeof database.updatedAt === 'number' && Number.isFinite(database.updatedAt)
+      ? database.updatedAt
+      : now;
+
+  const validTypesSet = new Set<string>(VALID_PROPERTY_TYPES);
+  const rawProps = database.properties && typeof database.properties === 'object' ? database.properties : {};
+  const properties: Record<string, DatabaseProperty> = {};
+
+  for (const [id, prop] of Object.entries(rawProps)) {
+    if (!prop || typeof prop !== 'object') continue;
+    const safeType: PropertyType =
+      typeof prop.type === 'string' && validTypesSet.has(prop.type)
+        ? (prop.type as PropertyType)
+        : 'text';
+    const safeWidth =
+      typeof prop.width === 'number' && Number.isFinite(prop.width) && prop.width > 0
+        ? prop.width
+        : 180;
+    const safeOptions = Array.isArray(prop.options)
+      ? prop.options.filter(
+          (opt): opt is SelectOption =>
+            !!opt &&
+            typeof opt === 'object' &&
+            typeof opt.id === 'string' &&
+            typeof opt.name === 'string'
+        )
+      : undefined;
+
+    properties[id] = {
+      ...prop,
+      id,
+      name: typeof prop.name === 'string' && prop.name ? prop.name : '未命名列',
+      type: safeType,
+      width: safeWidth,
+      ...(safeOptions ? { options: safeOptions } : {}),
+    };
+  }
+
   let propertyOrder = Array.isArray(database.propertyOrder)
     ? [...database.propertyOrder]
     : [];
@@ -180,7 +314,7 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
     }
   }
 
-  // 3. rows 与 rowOrder 自愈，清理悬空 cells
+  // 3. rows 与 rowOrder 自愈，清理悬空 cells 与补充缺失时间戳
   const rows: Record<string, DatabaseRow> = {};
   const validRowIds = new Set(Object.keys(database.rows || {}));
   const rawRowOrder = Array.isArray(database.rowOrder) ? database.rowOrder : [];
@@ -205,20 +339,36 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
     if (row.cells && typeof row.cells === 'object') {
       for (const [cellPropId, val] of Object.entries(row.cells)) {
         if (validPropIds.has(cellPropId)) {
-          cleanCells[cellPropId] = val;
+          const propDef = properties[cellPropId];
+          if (validateCellValue(val, propDef?.type || 'text')) {
+            cleanCells[cellPropId] = val;
+          }
         }
       }
     }
+    const rowCreatedAt =
+      typeof row.createdAt === 'number' && Number.isFinite(row.createdAt)
+        ? row.createdAt
+        : dbCreatedAt;
+    const rowUpdatedAt =
+      typeof row.updatedAt === 'number' && Number.isFinite(row.updatedAt)
+        ? row.updatedAt
+        : dbUpdatedAt;
+
     rows[rowId] = {
       ...row,
       id: rowId,
       databaseId: database.id,
       cells: cleanCells,
+      createdAt: rowCreatedAt,
+      updatedAt: rowUpdatedAt,
     };
   }
 
   return {
     ...database,
+    createdAt: dbCreatedAt,
+    updatedAt: dbUpdatedAt,
     properties,
     propertyOrder: cleanPropOrder,
     rows,
@@ -233,6 +383,11 @@ export function addProperty(
   db: DatabaseSchema,
   property: Omit<DatabaseProperty, 'id'> & { id?: string }
 ): DatabaseSchema {
+  // 严格防御：若显式传入的 ID 已在 properties 中存在，拒绝冲突以防破坏不变量
+  if (property.id && db.properties[property.id]) {
+    throw new Error(`Property with id "${property.id}" already exists`);
+  }
+
   const propId =
     property.id || `prop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
@@ -349,8 +504,10 @@ export function reorderProperties(
   newOrder: string[]
 ): DatabaseSchema {
   const currentSet = new Set(db.propertyOrder);
+  const newSet = new Set(newOrder);
   if (
     newOrder.length !== db.propertyOrder.length ||
+    newSet.size !== newOrder.length ||
     newOrder.some((id) => !currentSet.has(id))
   ) {
     throw new Error('Invalid property order permutation');
@@ -374,10 +531,11 @@ export function addRow(
   const now = Date.now();
   const rowId = `row-${now}-${Math.random().toString(36).substring(2, 6)}`;
 
-  // 过滤仅保留有效属性列对应的值
+  // 过滤仅保留有效属性列对应且值形态合法的值
   const validCells: Record<string, CellValue> = {};
   for (const [propId, val] of Object.entries(initialCells)) {
-    if (db.properties[propId]) {
+    const propDef = db.properties[propId];
+    if (propDef && validateCellValue(val, propDef.type)) {
       validCells[propId] = val;
     }
   }
@@ -408,7 +566,7 @@ export function addRow(
 }
 
 /**
- * 不可变更新行元信息
+ * 不可变更新行元信息与单元格（严格清洗 updates.cells 防止悬空属性或非法形态注入）
  */
 export function updateRow(
   db: DatabaseSchema,
@@ -418,11 +576,24 @@ export function updateRow(
   const existing = db.rows[rowId];
   if (!existing) return db;
 
+  let nextCells = existing.cells;
+  if (updates.cells && typeof updates.cells === 'object') {
+    const sanitizedCells: Record<string, CellValue> = {};
+    for (const [propId, val] of Object.entries(updates.cells)) {
+      const propDef = db.properties[propId];
+      if (propDef && validateCellValue(val, propDef.type)) {
+        sanitizedCells[propId] = val;
+      }
+    }
+    nextCells = sanitizedCells;
+  }
+
   const updatedRow: DatabaseRow = {
     ...existing,
     ...updates,
     id: rowId,
     databaseId: db.id,
+    cells: nextCells,
     updatedAt: Date.now(),
   };
 
@@ -447,7 +618,9 @@ export function updateCell(
 ): DatabaseSchema {
   const row = db.rows[rowId];
   if (!row) return db;
-  if (!db.properties[propertyId]) return db; // 属性不存在则忽略
+  const propDef = db.properties[propertyId];
+  if (!propDef) return db; // 属性不存在则忽略
+  if (!validateCellValue(value, propDef.type)) return db; // 值形态非法则忽略
 
   const now = Date.now();
   const nextCells = { ...row.cells, [propertyId]: value };
@@ -498,8 +671,10 @@ export function reorderRows(
   newOrder: string[]
 ): DatabaseSchema {
   const currentSet = new Set(db.rowOrder);
+  const newSet = new Set(newOrder);
   if (
     newOrder.length !== db.rowOrder.length ||
+    newSet.size !== newOrder.length ||
     newOrder.some((id) => !currentSet.has(id))
   ) {
     throw new Error('Invalid row order permutation');

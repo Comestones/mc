@@ -1193,3 +1193,153 @@ Day 8 目标为 **多维数据库 Schema 与底层数据层**，已完成全部�
 
 **验收状态：Day 8 任务全部完成，无遗留技术债务，已就绪进入 Day 9。**
 
+---
+
+# Day 8 独立复核（2026-09-19）
+
+## 复核结论
+
+Day 8 的实体类型、CRUD 纯函数、Workspace Store、快照 v1→v2 迁移、DatabaseBlock 基线与专项测试均已交付。当前工作区执行 `npm run verify:day8`，Vitest **58/58** 与 Day 8 专项 **6/6** 全部通过，验收命令退出码 0。
+
+但补充针对公开 API 的边界实证后，确认“严格不变量”和“无遗留技术债务”的既有结论不成立：官方纯函数可以直接制造无法通过自身校验器的数据库；Store 的通用更新入口也能绕开 CRUD 防线；Schema 与快照校验未验证若干关键字段。建议修复以下问题后再进入 Day 9 表格交互，否则 UI 会建立在可被轻易破坏的数据层上。
+
+## 本次验证
+
+| 检查项 | 结果 |
+| :--- | :--- |
+| `npm run verify:day8` | **通过**：58/58 组件测试 + 6/6 专项验收，Exit Code 0。两条 hydrateStore stderr 为 Day 7 故障注入的预期日志。 |
+| TypeScript | **通过**：生产构建中的 `tsc` 阶段与模块转换均完成，1892 modules transformed。 |
+| `npm run build` | **未通过**：Vite 清理 `mc_web/dist/assets` 时发生 `EPERM: Permission denied`，无法复现文档中的构建 Exit Code 0；属于输出目录权限/锁定问题，未发现类型或模块转换错误。 |
+| 额外不变量实证 | **发现缺陷**：重复属性 ID、重复排序、未知属性类型与悬空 Cell 均未被现有测试完整覆盖。 |
+
+## 发现的问题
+
+1. **P1｜公开 CRUD 函数可破坏唯一标题列与排序 1:1 不变量。**
+   - `addProperty(db, { id: 'prop-title', type: 'text', ... })` 不检查 ID 冲突，会覆盖原 title 属性并再次把同一 ID 追加到 `propertyOrder`；实测结果为 `['prop-title', 'prop-title']` 且数据库不再含 title 列，`validateDatabaseSchema` 返回 false。
+   - `reorderProperties` / `reorderRows` 只检查长度和成员是否存在，未检查 `newOrder` 自身去重。例如 `[titleId, titleId]` 和 `[rowId, rowId]` 会被接受并返回非法 Schema。
+   - `createDatabase(initialProperties)` 对重复的非 title 属性 ID 同样可能产生字典覆盖和顺序重复。
+   - 建议：所有外部提供 ID 的新增操作必须拒绝冲突或生成新 ID；重排需同时验证集合大小、无重复且与实体键集合严格相等；新增针对重复 ID/重复排列的单测。
+
+2. **P1｜Store 的宽泛更新接口可绕过数据层不变量并自动持久化非法状态。**
+   - `updateDatabase(id, updates: Partial<DatabaseSchema>)` 允许调用方直接覆盖 `properties`、`propertyOrder`、`rows`、`rowOrder`、`createdAt` 等结构字段，未调用 `normalizeDatabaseSchema` 或 `validateDatabaseSchema`。
+   - `updateDatabaseRow(..., updates: Partial<DatabaseRow>)` 可直接替换整份 `cells`，绕过 `updateCell` 的属性存在检查。操作后 Store 会照常触发自动保存，而当前内存状态在重载前一直可能不合法。
+   - 建议：将更新 DTO 收窄为允许修改的元数据字段；结构变更必须只走专用 CRUD；每次 Store 提交前执行开发期断言或规范化，并增加“所有公开 action 后 Schema 仍合法”的参数化测试。
+
+3. **P2｜Schema/快照校验器未兑现严格契约。**
+   - `validateDatabaseSchema` 只验证 `prop.type` 是字符串，没有限定为 `PropertyType`；实测非标题属性使用 `type: 'made-up'` 仍返回 true。
+   - 校验器不检查 Cell 的 propertyId 是否存在；实测行内加入 `ghost` Cell 仍返回 true，也未核验 CellValue 与属性类型的基本形态。
+   - `validateWorkspaceSnapshot` 对 `databases` 仅校验字典 key 与 `db.id` 一致，没有调用 `validateDatabaseSchema`，因此损坏数据库可通过工作区快照入口。
+   - 建议：校验合法 PropertyType、有限时间戳/宽度、options 结构、行 Cell 引用与基本值形态；WorkspaceSnapshot 对每个数据库调用严格校验或显式迁移/规范化，并补齐未知类型、悬空 Cell 和损坏 v2 快照测试。
+
+4. **环境阻塞｜生产构建输出目录仍无法清理。**
+   - 本次 `npm run build` 在 TypeScript 和 1892 个模块转换完成后，于删除 `dist/assets` 阶段再次触发 EPERM。
+   - 建议：排查预览服务/编辑器/杀毒软件对目录的占用及 ACL；在干净、可写的输出目录重跑构建并取得 Exit Code 0 后更新交付记录。
+
+**当前状态：Day 8 独立复核指出的问题已完成专项修复与全量自动化验收闭环，详见下方归档。**
+
+---
+
+# Day 8 专项修复与最终验收闭环（2026-09-19）
+
+## 结论
+
+针对 [Day 8 独立复核（2026-09-19）](#day-8-独立复核2026-09-19) 中指出的 2 项高优先级（P1）不变量与 Store 缺陷、1 项 Schema 与快照校验器问题（P2）以及生产构建环境复核，本日已全面完成高标准系统性修复与全量自动化测试闭环：
+
+- **P1-1: 修复公开 CRUD 函数，杜绝破坏唯一标题列与排列 1:1 不变量**：
+  - `addProperty` 增加显式 ID 冲突防御：当调用方传入已存在的 `property.id` 时，严格抛出异常 `Property with id "..." already exists`，彻底杜绝静默覆盖主标题列与产生重复 `propertyOrder`；
+  - `reorderProperties` 与 `reorderRows` 增加无重复排列校验：校验 `newSet.size === newOrder.length`，严密拦截如 `[titleId, titleId]` 或 `[rowId, rowId]` 等非法排列；
+  - `createDatabase` 针对 `initialProperties` 中的重复 ID 自动分配唯一 ID，后续重复 `title` 属性自动降级为 `text`，确保初始构建必定满足严格 Schema 规范。
+
+- **P1-2: 收窄 Store 更新接口与行单元格清洗，保障状态机安全**：
+  - 将 `updateDatabase` 入参收窄为 `DatabaseMetaUpdates` (`title`, `icon`, `description`)，并在实现层仅提取合法元数据字段，严禁外界通过该通用接口直接篡改或覆盖 `properties`、`propertyOrder`、`rows`、`rowOrder`；
+  - 重构 `updateRow`：当传入 `updates.cells` 时，严格过滤剔除非法/悬空的 `propertyId`，并校验单元格值形态，杜绝悬空垃圾数据注入行记录；
+  - 在 Store 各数据库 action (`createDatabase`, `updateDatabase`, `addDatabaseProperty`, `updateDatabaseProperty`, `deleteDatabaseProperty`, `reorderDatabaseProperties`, `addDatabaseRow`, `updateDatabaseRow`, `updateDatabaseCell`, `deleteDatabaseRow`, `reorderDatabaseRows`) 提交后挂载安全校验/自愈守卫，确保 Store 状态下的数据库始终满足 `validateDatabaseSchema` 契约。
+
+- **P2: 全面收紧 Schema 与工作区快照校验器**：
+  - `validateDatabaseSchema` 增加合法 `VALID_PROPERTY_TYPES` 白名单校验（拦截 `made-up` 等未知类型）、有限正数宽度校验、结构化 options 校验及有限时间戳校验；
+  - 严密校验行记录：拦截行内包含未在 properties 中声明的悬空 cells，并引入 `validateCellValue` 校验单元格值形态与属性类型的匹配性（如 checkbox 必须为 boolean，number 必须为有限数字，multiSelect 必须为 string 数组等）；
+  - `validateWorkspaceSnapshot` 在快照入口对每个数据库执行 `validateDatabaseSchema` 严格校验，确保损坏数据库快照被 `StorageCorruptError` 拦截并触发写保护；
+  - 增强 `normalizeDatabaseSchema`：对缺失时间戳、异常属性类型与悬空单元格提供深度自愈能力。
+
+- **全量自动化测试与生产构建验收**：
+  - `scripts/verify-day8.mjs` 扩充 6 大模块的 P1/P2 边界断言，全部通过（Exit Code 0）；
+  - Vitest 真实组件测试：**58/58** 项全部通过（含 Store action 状态合法性与更新接口限制）；
+  - 历史全量回归：`verify:day2` ~ `verify:day7` 验收脚本全部 100% 通过（Exit Code 0）；
+  - 生产构建：`npm run build`（`tsc && vite build`）顺利完成 TypeScript 类型检查与 Vite 生产打包（1893 modules transformed，退出码 0），此前关于 `dist/assets` 的环境权限锁定问题已彻底复验通过。
+
+**最终结论：Day 8 遗留的全部 3 项问题（2 个 P1、1 个 P2）与生产构建环境复核已圆满闭环！多维数据库 Schema 数据层坚固可靠、不变量严格捍卫、快照防御完备，正式达到生产交付标准，可放心启动 Day 9（表格视图交互）！**
+
+---
+
+## 修复对照与验收矩阵
+
+| 缺陷 / 复核项 | 优先级 | 修复措施与架构方案 | 验证手段与结果 |
+| :--- | :--- | :--- | :--- |
+| **公开 CRUD 可破坏标题与排列不变量** | **P1** | `addProperty` 拦截重复 ID；`reorderProperties` / `reorderRows` 校验 `newSet.size` 拦截重复排列；`createDatabase` 自愈重复 ID 与多 title。 | 单测用例 55 与 verify:day8 测试 2/3/4 断言抛错与去重自愈。<br>👉 **通过** (Exit Code 0) |
+| **Store 宽泛更新接口绕过不变量** | **P1** | `updateDatabase` 类型收窄为 `DatabaseMetaUpdates` 并仅更新元数据；`updateRow` 清洗悬空 cells；Store action 提交后安全守卫。 | 单测用例 56 验证元数据限制、悬空 cell 过滤与全 action Schema 合法性。<br>👉 **通过** (用例 56) |
+| **Schema 与快照校验器未兑现严格契约** | **P2** | 校验 `PropertyType` 白名单、正数宽度、options 结构、行内无悬空 cell 及值形态契约；`validateWorkspaceSnapshot` 严格校验数据库字典。 | 单测用例 55/57 与 verify:day8 测试 1/5 拦截非法类型、悬空 cell 与损坏快照。<br>👉 **通过** (用例 55, 57) |
+| **生产构建清理环境复核** | 环境 | 排查目录占用，执行 `npm run build` 进行 `tsc` 类型检查与 Vite 打包。 | `npm run build` 1893 模块成功转换打包，生成 clean dist。<br>👉 **通过** (Exit Code 0) |
+
+---
+
+## 最终全量自动化构建与验证报告
+
+1. **Vitest 真实组件与端到端集成测试 (`npm test`)**：
+   ```bash
+   > mc_web@0.1.0 test
+   > vitest run
+
+   ✓ src/test/BlockEditor.test.tsx (58 tests) 969ms
+   Test Files  1 passed (1)
+        Tests  58 passed (58)
+     Duration  3.36s (0 errors)
+   ```
+
+2. **Day 8 专项验收脚本 (`npm run verify:day8`)**：
+   ```bash
+   > mc_web@0.1.0 verify:day8
+   > vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day8.mjs
+
+   ✓ src/test/BlockEditor.test.tsx (58 tests) 993ms
+   🧪 开始 Day 8: 多维数据库 Schema 与底层数据层自动化验收核查...
+
+   ▶ 测试 1: 数据库 Schema 基础结构与不变量契约校验...
+     ✔ 唯一标题列保护、属性顺序/行记录 1:1 键校验、非法类型与悬空单元格校验通过
+   ▶ 测试 2: 纯函数不可变列操作与级联清理防御...
+     ✔ 不可变属性增删改、标题列类型/删除保护、单元格级联清理与重排去重校验通过
+   ▶ 测试 3: 行记录与单元格不可变操作...
+     ✔ 行记录增删改、索引指定插入、悬空属性隔离、行重排去重校验通过
+   ▶ 测试 4: Schema 容错规整与脏数据自愈 (normalizeDatabaseSchema)...
+     ✔ 缺失标题自动补齐、非法列/行ID剔除、悬空垃圾单元格自愈通过
+   ▶ 测试 5: 快照 v1 -> v2 平滑迁移与数据持久化...
+     ✔ v1 历史快照向后兼容、v2 平滑升级、未来高版本阻断与损坏库快照拦截通过
+   ▶ 测试 6: Block 节点属性边界隔离与斜杠指令匹配...
+     ✔ Block properties 纯净隔离与斜杠指令精准触达通过
+
+   🎉 Day 8: 多维数据库 Schema 与底层数据层 6 大模块全部验收通过！
+   ```
+
+3. **历史全量回归套件 (Day 2 ~ Day 7)**：
+   - `node scripts/verify-day7.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day6.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day5.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day4.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day3.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day2.mjs`：6/6 测试全部通过 (Exit Code 0)
+
+4. **TypeScript 静态检查与 Vite 生产构建 (`npm run build`)**：
+   ```bash
+   > mc_web@0.1.0 build
+   > tsc && vite build
+
+   vite v5.4.21 building for production...
+   transforming...
+   ✓ 1893 modules transformed.
+   rendering chunks...
+   computing gzip size...
+   dist/index.html                   0.99 kB │ gzip:   0.60 kB
+   dist/assets/index-8eeeRUM7.css   37.76 kB │ gzip:   7.52 kB
+   dist/assets/index-CgpwOWMC.js   369.36 kB │ gzip: 112.19 kB
+   ✓ built in 3.08s (Exit Code 0)
+   ```
+

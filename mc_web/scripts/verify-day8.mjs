@@ -9,6 +9,7 @@ import {
   deleteProperty,
   reorderProperties,
   addRow,
+  updateRow,
   updateCell,
   deleteRow,
   reorderRows,
@@ -87,7 +88,74 @@ console.log('▶ 测试 1: 数据库 Schema 基础结构与不变量契约校验
   };
   assert.equal(validateDatabaseSchema(badRowDb), false, 'row databaseId 不匹配应拦截');
 
-  console.log('  ✔ 唯一标题列保护、属性顺序/行记录 1:1 键校验通过');
+  // P2 校验防御 5: 未知属性类型 (type: 'made-up') 必须拦截
+  const unknownTypeDb = {
+    ...db,
+    properties: {
+      ...db.properties,
+      'p-bad': { id: 'p-bad', name: '非法列', type: 'made-up' },
+    },
+    propertyOrder: [...db.propertyOrder, 'p-bad'],
+  };
+  assert.equal(validateDatabaseSchema(unknownTypeDb), false, '未知属性类型应拦截');
+
+  // P2 校验防御 6: 行内包含未在 properties 中声明的悬空 cell 必须拦截
+  const ghostCellDb = {
+    ...db,
+    rows: {
+      'r-ghost': {
+        id: 'r-ghost',
+        databaseId: db.id,
+        cells: {
+          [DEFAULT_TITLE_PROPERTY_ID]: '合法标题',
+          'ghost-cell-id': '悬空垃圾数据',
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    rowOrder: ['r-ghost'],
+  };
+  assert.equal(validateDatabaseSchema(ghostCellDb), false, '悬空属性单元格应拦截');
+
+  // P2 校验防御 7: 单元格值形态与属性类型不匹配必须拦截
+  const badValueDb = {
+    ...db,
+    properties: {
+      ...db.properties,
+      'p-num': { id: 'p-num', name: '数字', type: 'number' },
+      'p-check': { id: 'p-check', name: '勾选', type: 'checkbox' },
+    },
+    propertyOrder: [...db.propertyOrder, 'p-num', 'p-check'],
+    rows: {
+      'r-bad-val': {
+        id: 'r-bad-val',
+        databaseId: db.id,
+        cells: {
+          [DEFAULT_TITLE_PROPERTY_ID]: '标题',
+          'p-num': '不是数字', // 应该为 number
+          'p-check': true,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    rowOrder: ['r-bad-val'],
+  };
+  assert.equal(validateDatabaseSchema(badValueDb), false, '非法单元格值类型应拦截');
+
+  // P2 校验防御 8: 非法宽度或选项结构必须拦截
+  const badWidthDb = {
+    ...db,
+    properties: {
+      ...db.properties,
+      'p-w': { id: 'p-w', name: '宽度异常', type: 'text', width: -100 },
+    },
+    propertyOrder: [...db.propertyOrder, 'p-w'],
+  };
+  assert.equal(validateDatabaseSchema(badWidthDb), false, '负数或非有限列宽应拦截');
+
+  console.log('  ✔ 唯一标题列保护、属性顺序/行记录 1:1 键校验、非法类型与悬空单元格校验通过');
 }
 
 // =================================================================
@@ -165,7 +233,21 @@ console.log('▶ 测试 2: 纯函数不可变列操作与级联清理防御...')
   db = reorderProperties(db, reversedOrder);
   assert.deepEqual(db.propertyOrder, reversedOrder, '属性列应支持确定性重排');
 
-  console.log('  ✔ 不可变属性增删改、标题列类型/删除保护、单元格级联清理通过');
+  // P1 防御：添加重复 ID 应被拒绝
+  assert.throws(
+    () => addProperty(db, { id: DEFAULT_TITLE_PROPERTY_ID, name: '冲突ID列', type: 'text' }),
+    /already exists/,
+    '添加重复属性 ID 必须抛出异常'
+  );
+
+  // P1 防御：列重排包含重复项应被拒绝
+  assert.throws(
+    () => reorderProperties(db, [DEFAULT_TITLE_PROPERTY_ID, DEFAULT_TITLE_PROPERTY_ID]),
+    /Invalid property order permutation/,
+    '列重排包含重复 ID 必须抛出异常'
+  );
+
+  console.log('  ✔ 不可变属性增删改、标题列类型/删除保护、单元格级联清理与重排去重校验通过');
 }
 
 // =================================================================
@@ -208,9 +290,30 @@ console.log('▶ 测试 3: 行记录与单元格不可变操作...');
   db = updateCell(db, row1Id, 'non-existent', 999);
   assert.equal(db.rows[row1Id].cells['non-existent'], undefined);
 
+  // 更新非法值形态：静默安全忽略
+  db = updateCell(db, row1Id, numPropId, 'not-a-number');
+  assert.equal(db.rows[row1Id].cells[numPropId], 2, '类型不符的值更新应被忽略');
+
+  // P1: updateRow 传入包含悬空 cell 的更新对象，应自动清洗
+  db = updateRow(db, row1Id, {
+    cells: {
+      [DEFAULT_TITLE_PROPERTY_ID]: '已更新Bug',
+      'ghost-prop': 'should-be-stripped',
+    },
+  });
+  assert.equal(db.rows[row1Id].cells['ghost-prop'], undefined, 'updateRow 中悬空属性必须被清洗');
+  assert.equal(db.rows[row1Id].cells[DEFAULT_TITLE_PROPERTY_ID], '已更新Bug');
+
   // 行记录重排
   db = reorderRows(db, [row1Id, row0Id]);
   assert.deepEqual(db.rowOrder, [row1Id, row0Id]);
+
+  // P1: 行重排包含重复项应被拒绝
+  assert.throws(
+    () => reorderRows(db, [row1Id, row1Id]),
+    /Invalid row order permutation/,
+    '行重排包含重复行 ID 必须抛出异常'
+  );
 
   // 删除行记录
   db = deleteRow(db, row0Id);
@@ -218,7 +321,7 @@ console.log('▶ 测试 3: 行记录与单元格不可变操作...');
   assert.equal(db.rowOrder.includes(row0Id), false);
   assert.equal(db.rowOrder.length, 1);
 
-  console.log('  ✔ 行记录增删改、索引指定插入、悬空属性隔离与行重排校验通过');
+  console.log('  ✔ 行记录增删改、索引指定插入、悬空属性隔离、行重排去重校验通过');
 }
 
 // =================================================================
@@ -274,6 +377,16 @@ console.log('▶ 测试 4: Schema 容错规整与脏数据自愈 (normalizeDatab
   // 5. 校验规整后的对象是否符合严格 Schema 规范
   assert.equal(validateDatabaseSchema(healed), true, '修复后的数据库应完全符合规范');
 
+  // P1: createDatabase 传入包含重复 ID 和多 title 的 initialProperties
+  const multiTitleInitDb = createDatabase('多Title初建库', [
+    { id: 'dup-id', name: '标题 1', type: 'title' },
+    { id: 'dup-id', name: '重复ID列', type: 'text' },
+    { id: 'p-title-2', name: '标题 2', type: 'title' },
+  ]);
+  assert.equal(validateDatabaseSchema(multiTitleInitDb), true, '初始属性含重复 ID 与多 title 必须生成合法数据库');
+  assert.equal(multiTitleInitDb.propertyOrder.length, 3);
+  assert.equal(Object.values(multiTitleInitDb.properties).filter((p) => p.type === 'title').length, 1);
+
   console.log('  ✔ 缺失标题自动补齐、非法列/行ID剔除、悬空垃圾单元格自愈通过');
 }
 
@@ -321,7 +434,22 @@ console.log('▶ 测试 5: 快照 v1 -> v2 平滑迁移与数据持久化...');
   // 拦截未来未知版本 (> 2)
   assert.equal(validateWorkspaceSnapshot({ ...v1Snapshot, version: 3 }), false, '未知高版本快照必须拦截');
 
-  console.log('  ✔ v1 历史快照向后兼容、v2 平滑升级、未来高版本阻断通过');
+  // P2: 快照中若包含损坏的数据库（如非法属性类型或悬空 cell），必须被拦截
+  const corruptDbSnapshot = {
+    ...v1Snapshot,
+    version: 2,
+    databases: {
+      'bad-db': {
+        ...createDatabase('坏库'),
+        properties: {
+          [DEFAULT_TITLE_PROPERTY_ID]: { id: DEFAULT_TITLE_PROPERTY_ID, name: '标题', type: 'made-up' },
+        },
+      },
+    },
+  };
+  assert.equal(validateWorkspaceSnapshot(corruptDbSnapshot), false, '快照中包含损坏数据库必须被拦截');
+
+  console.log('  ✔ v1 历史快照向后兼容、v2 平滑升级、未来高版本阻断与损坏库快照拦截通过');
 }
 
 // =================================================================
