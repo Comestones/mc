@@ -159,6 +159,31 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
     updateDatabaseProperty(databaseId, propId, { width: finalWidth });
   };
 
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    const current = activeResizeRef.current;
+    if (!current) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      if (
+        typeof e.currentTarget.hasPointerCapture === 'function' &&
+        e.currentTarget.hasPointerCapture(e.pointerId) &&
+        typeof e.currentTarget.releasePointerCapture === 'function'
+      ) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // 忽略部分浏览器或无 capture 时的释放异常
+    }
+
+    const propId = current.propId;
+    activeResizeRef.current = null;
+    setActiveResize(null);
+    onColumnResizing?.(propId, null);
+    // 取消操作绝不提交 Store，保证列宽保持原值
+  };
+
   return (
     <thead className="sticky top-0 z-20 bg-neutral-100/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm shadow-sm">
       <tr role="row" className="border-b border-border-light dark:border-border-dark">
@@ -202,7 +227,7 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                 onPointerDown={(e) => handlePointerDown(e, propId, displayWidth)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
                 className={cn(
                   'absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize transition-colors z-30',
                   isResizingThis

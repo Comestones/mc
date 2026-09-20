@@ -10,6 +10,7 @@ export interface TableCellProps {
   rowIndex: number;
   colIndex: number;
   isFocused: boolean;
+  isRovingTabStop?: boolean;
   isEditing: boolean;
   onFocusCell: (rowIndex: number, colIndex: number) => void;
   onStartEdit: (rowIndex: number, colIndex: number) => void;
@@ -24,6 +25,7 @@ export const TableCell: React.FC<TableCellProps> = ({
   rowIndex,
   colIndex,
   isFocused,
+  isRovingTabStop,
   isEditing,
   onFocusCell,
   onStartEdit,
@@ -144,6 +146,13 @@ export const TableCell: React.FC<TableCellProps> = ({
     onFocusCell(rowIndex, colIndex);
   };
 
+  const handleFocus = (e: React.FocusEvent<HTMLTableCellElement>) => {
+    if (e.target !== cellRef.current) return;
+    if (!isFocused) {
+      onFocusCell(rowIndex, colIndex);
+    }
+  };
+
   // 格式化只读/非编辑态下的展示内容
   const renderFormattedValue = () => {
     if (cellValue === undefined || cellValue === null || cellValue === '') {
@@ -233,7 +242,7 @@ export const TableCell: React.FC<TableCellProps> = ({
     <td
       ref={cellRef}
       role="gridcell"
-      tabIndex={isFocused ? 0 : -1}
+      tabIndex={isRovingTabStop !== undefined ? (isRovingTabStop ? 0 : -1) : (isFocused ? 0 : -1)}
       aria-selected={isFocused}
       aria-readonly={!isEditable}
       data-testid={`db-cell-${rowIndex}-${colIndex}`}
@@ -241,6 +250,7 @@ export const TableCell: React.FC<TableCellProps> = ({
       data-col-index={colIndex}
       data-property-id={propertyId}
       onClick={handleClick}
+      onFocus={handleFocus}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleCellKeyDown}
       className={cn(

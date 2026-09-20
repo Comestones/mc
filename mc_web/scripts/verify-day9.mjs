@@ -46,7 +46,56 @@ console.log('▶ 测试 1: 列宽调整算法与边界范围契约校验...');
   assert.equal(computeWidth(180, 20.4), 200);
   assert.equal(computeWidth(180, 20.6), 201);
 
-  console.log('  ✔ 列宽范围硬性约束 (120px ~ 600px) 及四舍五入规整通过');
+  // 模拟列宽调整生命周期状态机：pointerdown -> pointermove* -> pointerup (commit) / pointercancel (rollback)
+  class ColumnResizeController {
+    constructor(propId, initialWidth) {
+      this.propId = propId;
+      this.initialWidth = initialWidth;
+      this.previewWidth = null;
+      this.committedWidth = initialWidth;
+      this.commitCount = 0;
+    }
+    onPointerDown() {
+      this.previewWidth = this.initialWidth;
+    }
+    onPointerMove(deltaX) {
+      this.previewWidth = computeWidth(this.initialWidth, deltaX);
+    }
+    onPointerUp() {
+      if (this.previewWidth !== null) {
+        this.committedWidth = this.previewWidth;
+        this.commitCount++;
+        this.previewWidth = null;
+      }
+    }
+    onPointerCancel() {
+      // 取消操作：清空预览，绝不提交，保持原值
+      this.previewWidth = null;
+    }
+  }
+
+  // 验证 pointerup 单次提交
+  const controller1 = new ColumnResizeController('col-1', 180);
+  controller1.onPointerDown();
+  controller1.onPointerMove(10);
+  controller1.onPointerMove(20);
+  controller1.onPointerMove(30);
+  assert.equal(controller1.commitCount, 0, '移动期间绝不提前提交');
+  controller1.onPointerUp();
+  assert.equal(controller1.commitCount, 1, 'pointerup 时单次原子化提交');
+  assert.equal(controller1.committedWidth, 210);
+
+  // 验证 pointercancel 取消回滚
+  const controller2 = new ColumnResizeController('col-2', 180);
+  controller2.onPointerDown();
+  controller2.onPointerMove(50);
+  assert.equal(controller2.previewWidth, 230);
+  controller2.onPointerCancel();
+  assert.equal(controller2.commitCount, 0, 'pointercancel 时提交次数必须为 0');
+  assert.equal(controller2.committedWidth, 180, 'pointercancel 时属性宽度必须保持原值');
+  assert.equal(controller2.previewWidth, null, 'pointercancel 时预览状态必须重置');
+
+  console.log('  ✔ 列宽范围硬性约束 (120px ~ 600px)、单次提交与 pointercancel 取消回滚契约通过');
 }
 
 // =================================================================
@@ -119,7 +168,29 @@ console.log('▶ 测试 2: Roving Tabindex 键盘导航状态机与边界回绕.
   // 第一行第一列停在原处
   assert.deepEqual(navigate('prev', { rowIndex: 0, colIndex: 0 }, rows, cols), { rowIndex: 0, colIndex: 0 });
 
-  console.log('  ✔ 方向键移动、边界阻断、Tab/Shift+Tab 行间回绕状态机通过');
+  // 5. 初始挂载与 Roving Tab Stop 判定算法
+  const getRovingTabStop = (focusedCell, rowIndex, colIndex, numRows, numCols) => {
+    if (numRows === 0 || numCols === 0) return false;
+    if (focusedCell) {
+      return focusedCell.rowIndex === rowIndex && focusedCell.colIndex === colIndex;
+    }
+    // 初始状态（focusedCell 为 null）下，仅首行首列 (0, 0) 为 roving tab stop
+    return rowIndex === 0 && colIndex === 0;
+  };
+
+  // 初始状态：(0, 0) 为 true，其余均为 false
+  assert.equal(getRovingTabStop(null, 0, 0, rows, cols), true);
+  assert.equal(getRovingTabStop(null, 0, 1, rows, cols), false);
+  assert.equal(getRovingTabStop(null, 1, 0, rows, cols), false);
+  assert.equal(getRovingTabStop(null, 2, 3, rows, cols), false);
+
+  // 聚焦状态：仅聚焦单元格为 true
+  const focusState = { rowIndex: 1, colIndex: 2 };
+  assert.equal(getRovingTabStop(focusState, 0, 0, rows, cols), false);
+  assert.equal(getRovingTabStop(focusState, 1, 2, rows, cols), true);
+  assert.equal(getRovingTabStop(focusState, 1, 3, rows, cols), false);
+
+  console.log('  ✔ 方向键移动、边界阻断、Tab/Shift+Tab 行间回绕与初始 Roving Tab Stop 状态机通过');
 }
 
 // =================================================================

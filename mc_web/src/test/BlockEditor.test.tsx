@@ -2459,7 +2459,7 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(screen.getByTestId('db-cell-0-0')).toHaveTextContent('记录 1');
   });
 
-  it('60. [Day 9] 列宽 Pointer Events 拖拽与 120px ~ 600px 范围限制及单次 Store 提交', () => {
+  it('60. [Day 9] 列宽 Pointer Events 拖拽与 120px ~ 600px 范围限制、单次 Store 提交与取消回滚', () => {
     const dbId = useWorkspaceStore.getState().createDatabase('列宽测试表');
     const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
     const docId = 'doc-db-day9-resize';
@@ -2477,15 +2477,27 @@ describe('BlockEditor Component & Store Integration', () => {
     const handle = screen.getByTestId(`column-resize-handle-${titlePropId}`);
     expect(handle).toBeInTheDocument();
 
+    const updatePropSpy = vi.spyOn(useWorkspaceStore.getState(), 'updateDatabaseProperty');
+
     // 1. 模拟向右拖拽 +100px (220 + 100 = 320)
     act(() => {
       fireEvent.pointerDown(handle, { clientX: 200, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 250, pointerId: 1 });
       fireEvent.pointerMove(handle, { clientX: 300, pointerId: 1 });
+    });
+    // 移动期间不应触发 updateDatabaseProperty
+    expect(updatePropSpy).not.toHaveBeenCalled();
+
+    act(() => {
       fireEvent.pointerUp(handle, { clientX: 300, pointerId: 1 });
     });
+    // pointerUp 触发单次提交
+    expect(updatePropSpy).toHaveBeenCalledTimes(1);
+    expect(updatePropSpy).toHaveBeenCalledWith(dbId, titlePropId, { width: 320 });
 
     let currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
     expect(currentProp.width).toBe(320);
+    updatePropSpy.mockClear();
 
     // 2. 模拟缩小超出下限 (-500px)，应受限为 MIN_COLUMN_WIDTH (120px)
     act(() => {
@@ -2494,18 +2506,36 @@ describe('BlockEditor Component & Store Integration', () => {
       fireEvent.pointerUp(handle, { clientX: -200, pointerId: 1 });
     });
 
+    expect(updatePropSpy).toHaveBeenCalledTimes(1);
+    expect(updatePropSpy).toHaveBeenCalledWith(dbId, titlePropId, { width: 120 });
     currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
     expect(currentProp.width).toBe(120);
+    updatePropSpy.mockClear();
 
-    // 3. 模拟放大超出上限 (+1000px)，应受限为 MAX_COLUMN_WIDTH (600px)
+    // 3. 模拟 pointerCancel 取消拖拽：不提交 Store，保持原值
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 });
+      fireEvent.pointerCancel(handle, { clientX: 400, pointerId: 1 });
+    });
+    // pointerCancel 绝不提交 Store
+    expect(updatePropSpy).not.toHaveBeenCalled();
+    currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
+    expect(currentProp.width).toBe(120); // 仍为 120，未被污染
+
+    // 4. 模拟放大超出上限 (+1000px)，应受限为 MAX_COLUMN_WIDTH (600px)
     act(() => {
       fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
       fireEvent.pointerMove(handle, { clientX: 1200, pointerId: 1 });
       fireEvent.pointerUp(handle, { clientX: 1200, pointerId: 1 });
     });
 
+    expect(updatePropSpy).toHaveBeenCalledTimes(1);
+    expect(updatePropSpy).toHaveBeenCalledWith(dbId, titlePropId, { width: 600 });
     currentProp = useWorkspaceStore.getState().databases[dbId].properties[titlePropId];
     expect(currentProp.width).toBe(600);
+
+    updatePropSpy.mockRestore();
   });
 
   it('61. [Day 9] title 与 text 单元格内联编辑：双击/Enter 进入编辑态，输入新值，Enter 提交并向下移动焦点，Tab 提交并向右移动，Escape 取消并保留原值', () => {
@@ -2689,5 +2719,193 @@ describe('BlockEditor Component & Store Integration', () => {
     const cell20 = screen.getByTestId('db-cell-2-0');
     expect(cell20).toBeInTheDocument();
     expect(cell20).toHaveAttribute('tabindex', '0');
+  });
+
+  it('64. [Day 9] 表格首次渲染拥有唯一 Roving Tab 停靠点 (0, 0)，支持从表格外通过 Tab/focus 进入并激活方向键导航', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('Tab可访问性测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '说明', type: 'text' });
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '第一行' });
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '第二行' });
+
+    const docId = 'doc-db-day9-tab-stop';
+    registerTestDoc(docId, [
+      {
+        id: 'b-tab-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 验证已有数据的表格初始渲染时，恰好只有 (0, 0) 单元格拥有 tabindex="0"，其余均为 "-1"
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    const cell10 = screen.getByTestId('db-cell-1-0');
+    const cell11 = screen.getByTestId('db-cell-1-1');
+
+    expect(cell00).toHaveAttribute('tabindex', '0');
+    expect(cell01).toHaveAttribute('tabindex', '-1');
+    expect(cell10).toHaveAttribute('tabindex', '-1');
+    expect(cell11).toHaveAttribute('tabindex', '-1');
+
+    // 2. 模拟用户从表格外部通过 Tab 键聚焦到 (0, 0) 单元格
+    act(() => {
+      cell00.focus();
+    });
+
+    // 触发 focus 事件后，Cell 应变为聚焦激活态
+    expect(cell00).toHaveClass('ring-2');
+
+    // 3. 聚焦激活后直接使用方向键穿梭
+    act(() => {
+      fireEvent.keyDown(cell00, { key: 'ArrowRight' });
+    });
+    expect(cell01).toHaveAttribute('tabindex', '0');
+    expect(cell00).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('65. [Day 9] UI 修改单元格与列宽后防抖自动保存、重建 Store 并执行 hydrateStore 刷新恢复端到端测试', async () => {
+    // 1. 设置持久化适配器
+    const persistentStorage = new MemoryStorage(null, { isPersistent: true });
+    useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const dbId = useWorkspaceStore.getState().createDatabase('持久化恢复测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, { [titlePropId]: '初始未修改' });
+
+    const docId = 'doc-db-day9-persist';
+    registerTestDoc(docId, [
+      {
+        id: 'b-persist-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    const { unmount } = render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 2. UI 操作：双击编辑单元格
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    act(() => {
+      fireEvent.doubleClick(cell00);
+    });
+    const input = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input, { target: { value: '持久化新标题内容' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+
+    // 3. UI 操作：拖拽调整列宽
+    const handle = screen.getByTestId(`column-resize-handle-${titlePropId}`);
+    act(() => {
+      fireEvent.pointerDown(handle, { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientX: 250, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientX: 250, pointerId: 1 });
+    });
+
+    // 4. 等待 550ms 防抖自动保存触发
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    // 验证底层快照已持久化
+    const snapshot = await persistentStorage.load();
+    expect(snapshot).not.toBeNull();
+    const persistedDb = snapshot?.databases?.[dbId];
+    expect(persistedDb).toBeDefined();
+    const row0Id = persistedDb?.rowOrder[0]!;
+    expect(persistedDb?.rows[row0Id]?.cells[titlePropId]).toBe('持久化新标题内容');
+    expect(persistedDb?.properties[titlePropId]?.width).toBe(370); // 220 + 150 = 370
+
+    unmount();
+
+    // 5. 模拟浏览器刷新 / 重建 Store
+    useWorkspaceStore.setState({
+      databases: {},
+      isHydrated: false,
+      storageStatus: 'idle',
+    });
+    expect(useWorkspaceStore.getState().databases[dbId]).toBeUndefined();
+
+    // 6. 执行 hydrateStore() 恢复快照
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const restoredDb = useWorkspaceStore.getState().getDatabase(dbId);
+    expect(restoredDb).toBeDefined();
+    expect(restoredDb?.rows[row0Id]?.cells[titlePropId]).toBe('持久化新标题内容');
+    expect(restoredDb?.properties[titlePropId]?.width).toBe(370);
+
+    // 7. 重新挂载组件，验证 UI 渲染恢复
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+    expect(screen.getByTestId('db-cell-0-0')).toHaveTextContent('持久化新标题内容');
+    const headerTh = screen.getByTestId(`db-header-${titlePropId}`);
+    expect(headerTh).toHaveStyle({ width: '370px' });
+  });
+
+  it('66. [Day 9] 200 行大数据量真实 React 表格组件挂载渲染、滚动与键盘导航基准测试', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('200行压力测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '状态', type: 'text' });
+    const statusPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    // 批量构造 200 行数据
+    for (let i = 0; i < 200; i++) {
+      useWorkspaceStore.getState().addDatabaseRow(dbId, {
+        [titlePropId]: `大数据记录 #${i + 1}`,
+        [statusPropId]: i % 2 === 0 ? '进行中' : '已完成',
+      });
+    }
+
+    const docId = 'doc-db-day9-200rows';
+    registerTestDoc(docId, [
+      {
+        id: 'b-200-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    const renderStart = performance.now();
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+    const renderDuration = performance.now() - renderStart;
+
+    // 1. 验证 200 行真实 DOM 全部挂载（1 表头 + 200 数据行 = 201 行）
+    const allRows = screen.getAllByRole('row');
+    expect(allRows.length).toBe(201);
+    expect(screen.getByTestId('db-rows-count')).toHaveTextContent('200 记录');
+    expect(renderDuration).toBeLessThan(1500); // jsdom 挂载 200 行合理耗时
+
+    // 2. 模拟表格滚动容器滚动
+    const scrollContainer = screen.getByRole('region', { name: '数据表格' });
+    expect(scrollContainer).toBeInTheDocument();
+    act(() => {
+      fireEvent.scroll(scrollContainer, { target: { scrollTop: 500, scrollLeft: 100 } });
+    });
+
+    // 3. 键盘快速导航穿梭（从第一行到第二行再到第 200 行单元格定位）
+    const cell00 = screen.getByTestId('db-cell-0-0');
+    act(() => {
+      fireEvent.click(cell00);
+      fireEvent.keyDown(cell00, { key: 'ArrowDown' });
+    });
+    const cell10 = screen.getByTestId('db-cell-1-0');
+    expect(cell10).toHaveAttribute('tabindex', '0');
+
+    // 验证尾行第 200 行（索引 199）正常渲染
+    const cell1990 = screen.getByTestId('db-cell-199-0');
+    expect(cell1990).toBeInTheDocument();
+    expect(cell1990).toHaveTextContent('大数据记录 #200');
   });
 });

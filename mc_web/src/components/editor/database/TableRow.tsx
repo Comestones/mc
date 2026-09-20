@@ -50,6 +50,9 @@ export const TableRow: React.FC<TableRowProps> = ({
           focusedCell?.rowIndex === rowIndex && focusedCell?.colIndex === colIndex;
         const isEditing =
           editingCell?.rowIndex === rowIndex && editingCell?.colIndex === colIndex;
+        const isRovingTabStop = focusedCell
+          ? isFocused
+          : rowIndex === 0 && colIndex === 0;
 
         return (
           <TableCell
@@ -60,6 +63,7 @@ export const TableRow: React.FC<TableRowProps> = ({
             rowIndex={rowIndex}
             colIndex={colIndex}
             isFocused={isFocused}
+            isRovingTabStop={isRovingTabStop}
             isEditing={isEditing}
             onFocusCell={onFocusCell}
             onStartEdit={onStartEdit}
