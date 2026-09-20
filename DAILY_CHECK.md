@@ -1565,3 +1565,115 @@ Day 9 规划的类 Notion 多维数据库表格视图（Table View）核心交�
    ✓ built in 3.65s (Exit Code 0)
    ```
 
+---
+
+# Day 10 完成情况检查与交付归档（2026-09-20）
+
+## 结论
+
+Day 10 所规划的基础字段类型系统（Property Types: Text、Number、Checkbox、Select、Multi-select）已全面高标准交付，并通过全套自动化测试、双重生产构建与全量历史回归验证：
+- **数据契约与原子迁移**：为 5 大基础字段定义严格的数据契约与边界规整逻辑；实现 `migrateCellForTypeChange` 与 `changePropertyType`，跨类型转换原子化迁移整列数据；Select/Multi-select 统一存储稳定 option ID，选项删除时级联清理所有行中该选项引用，杜绝悬空引用与 `NaN`。
+- **专用单元格编辑器**：交付 `TextCellEditor`、`NumberCellEditor`、`SelectCellEditor`、`MultiSelectCellEditor`，保持 Enter/Tab/Shift+Tab/Escape、失焦提交、IME 保护与无障碍规范一致。
+- **交互与浮层隔离**：Checkbox 单元格支持 Space 键即时切换与单击切换；Select/Multi-select 弹层打开时通过 `stopPropagation` 严格隔离外部 Grid 导航，关闭后平滑归还单元格焦点。
+- **字段与选项配置**：`ColumnConfigPopover` 支持列重命名、字段类型安全切换（主标题列不可变保护）、删除列；Select/Multi-select 支持选项新增、重命名、8 款精选预设色彩选择、删除与行数据级联清理；表头最右侧交付 `+` 快速添加新字段按钮。
+- **质量保障与门禁闭环**：
+  1. 修复并闭环 Day 9 遗留的构建门禁：默认 `npm run build` 连续两次以退出码 0 成功打包；
+  2. 新增 `scripts/verify-day10.mjs` 并在 `package.json` 注册 `verify:day10` 脚本，5 大模块全部通过；
+  3. Vitest 真实组件测试扩充至 **72 项全部通过**；
+  4. Day 2 ~ Day 9 全量历史回归脚本 100% 成功（Exit Code 0）；
+  5. `npx tsc --noEmit` 静态类型检查零错误。
+
+**最终结论：Day 10 基础字段类型系统功能完备、契约健壮、性能优异，已达到生产交付标准，可顺利进入 Day 11。**
+
+---
+
+## 检查项修复与验收对照
+
+| 检查项 | 规划要求与技术规范 | 实现与技术方案 | 验收结果 |
+| :--- | :--- | :--- | :--- |
+| **1. 基础字段数据契约** | 定义 Text、Number、Checkbox、Select、Multi-select 统一空值/解析/规整规则；标签统一持久化稳定 option ID。 | 在 `src/types/database.ts` 与 `src/utils/databaseUtils.ts` 规范化 5 大基础类型，`normalizeDatabaseSchema` 自愈旧标签数据并映射稳定 option ID。 | **通过**<br>(契约严格，旧数据兼容) |
+| **2. 跨类型原子安全迁移** | 列类型切换时原子化迁移整列数据，主标题列不可变保护；删除选项级联清理。 | 纯函数 `changePropertyType` 与 `migrateCellForTypeChange`：主标题列强校验抛错；删除选项级联移除所有行中 cells 引用；200 行整列原子迁移耗时 < 1ms。 | **通过**<br>(用例 71 及 verify-day10 测试 2、3、4 验证) |
+| **3. 专用单元格编辑器** | 拆分专用编辑器，Enter/Tab/Shift+Tab/Escape、失焦提交与 IME 行为一致。 | 交付 `TextCellEditor`、`NumberCellEditor`、`SelectCellEditor`、`MultiSelectCellEditor`，在 `TableCell` 统一调度分发。 | **通过**<br>(用例 67~70 全面覆盖) |
+| **4. Checkbox 快捷键与交互** | 支持 Space 快速翻转、点击切换，即时触发持久化。 | `TableCell` 拦截 Space 键与点击事件，即时调用 `updateDatabaseCell` 翻转布尔值。 | **通过**<br>(用例 67 验证 Space 与点击切换) |
+| **5. 列配置与选项管理** | 列头新增列（`+` 按钮）、重命名、类型切换、选项增删改、8 色选择、删除列。 | 交付 `ColumnConfigPopover` 与 `TableHeader` 右侧 `+` 按钮，集成 8 款经典预设色彩 `PRESET_OPTION_COLORS`。 | **通过**<br>(用例 71 验证增删改与 8 色选择) |
+| **6. 刷新持久化端到端恢复** | UI 编辑基础字段后防抖自动保存，Store 重建并执行 `hydrateStore` 恢复。 | 用例 72 验证 Number、Checkbox、Select 经 550ms 防抖保存到持久化存储，重置后执行 `hydrateStore` 恢复至 UI 渲染。 | **通过**<br>(用例 72 验证端到端恢复) |
+
+---
+
+## 自动化测试与构建复核
+
+1. **真实组件测试 (`npm test`)**：
+   ```bash
+   > mc_web@0.1.0 test
+   > vitest run
+
+   ✓ src/test/BlockEditor.test.tsx (72 tests) 1583ms
+   Test Files  1 passed (1)
+        Tests  72 passed (72)
+     Duration  4.31s (0 errors)
+   ```
+
+2. **Day 10 专项验收脚本 (`npm run verify:day10`)**：
+   ```bash
+   > mc_web@0.1.0 verify:day10
+   > vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day10.mjs
+
+   ✓ src/test/BlockEditor.test.tsx (72 tests) 1726ms
+   🧪 开始 Day 10: 基础字段类型系统 (Property Types) 自动化验收核查...
+
+   ▶ 测试 1: 5 大基础字段类型契约与 8 色预设色彩体系校验...
+     ✔ 基础字段类型定义完整，8 色预设色彩体系契约通过
+   ▶ 测试 2: 跨类型单元格原子迁移函数行为与边界用例校验...
+     ✔ migrateCellForTypeChange 跨类型转换与容错机制校验通过
+   ▶ 测试 3: changePropertyType 整列迁移与主标题列不变量保护...
+     ✔ 整列数据原子迁移与主标题列不可变守卫通过
+   ▶ 测试 4: 标签选项增删改与行数据级联清理 (Cascade Delete)...
+     ✔ 选项新增、更新、删除及全量数据行级联清理通过
+   ▶ 测试 5: 200 行 5 大字段全量装载与列类型迁移基准耗时性能...
+     ⚡ 200 行全字段数据插入耗时: 4.46ms
+     ⚡ 200 行整列原子类型迁移耗时: 0.34ms
+     ✔ 200 行多字段数据装载与整列原子类型迁移性能达标
+
+   🎉 Day 10: 基础字段类型系统 (Property Types) 5 大模块全部验收通过！
+   ```
+
+3. **历史全量回归套件 (Day 2 ~ Day 9)**：
+   - `node scripts/verify-day9.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day8.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day7.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day6.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day5.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day4.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day3.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day2.mjs`：6/6 测试全部通过 (Exit Code 0)
+
+4. **TypeScript 静态检查与 Vite 生产构建门禁（连续两次） (`npm run build`)**：
+   ```bash
+   > mc_web@0.1.0 build
+   > tsc && vite build
+
+   vite v5.4.21 building for production...
+   transforming...
+   ✓ 1902 modules transformed.
+   rendering chunks...
+   computing gzip size...
+   dist/index.html                   0.99 kB │ gzip:   0.60 kB
+   dist/assets/index-C_jXifu9.css   43.03 kB │ gzip:   8.16 kB
+   dist/assets/index-CH2qnZ1-.js   404.74 kB │ gzip: 120.42 kB
+   ✓ built in 3.45s (Exit Code 0)
+
+   > mc_web@0.1.0 build
+   > tsc && vite build
+
+   vite v5.4.21 building for production...
+   transforming...
+   ✓ 1902 modules transformed.
+   rendering chunks...
+   computing gzip size...
+   dist/index.html                   0.99 kB │ gzip:   0.60 kB
+   dist/assets/index-C_jXifu9.css   43.03 kB │ gzip:   8.16 kB
+   dist/assets/index-CH2qnZ1-.js   404.74 kB │ gzip: 120.42 kB
+   ✓ built in 3.29s (Exit Code 0)
+   ```
+
+

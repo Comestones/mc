@@ -156,6 +156,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
             const clamped = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, width));
             return <col key={propId} style={{ width: `${clamped}px` }} />;
           })}
+          <col style={{ width: '40px' }} />
         </colgroup>
 
         <TableHeader
@@ -169,7 +170,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
           {rowOrder.length === 0 ? (
             <tr>
               <td
-                colSpan={propertyOrder.length || 1}
+                colSpan={propertyOrder.length + 1 || 1}
                 className="px-4 py-8 text-center text-text-muted-light dark:text-text-muted-dark italic"
               >
                 <div className="flex flex-col items-center justify-center gap-2">

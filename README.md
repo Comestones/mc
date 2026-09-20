@@ -76,13 +76,20 @@
   - **Pointer Events 列宽拖拽**：实现平滑调整手柄，动态约束宽度在 `120px ~ 600px`（`MIN_COLUMN_WIDTH` / `MAX_COLUMN_WIDTH`）；拖拽期间实时视觉反馈，`pointerup` 时单次原子化提交 Store，提供组件卸载安全防护。
   - **内联编辑与 IME 防护**：`title` 与 `text` 字段支持双击、`Enter` 或 `F2` 进入编辑态；`Enter` 提交并向下转移焦点，`Tab` 提交并向右移动，`Shift+Tab` 提交并向左移动，`Escape` 取消并保留原值，`onBlur` 失焦提交；挂载 `isComposing` 输入法合成锁，拼音候选阶段绝不误提交或退出。
   - **无障碍与 Roving Tabindex**：完整支持 WAI-ARIA `grid`, `row`, `columnheader`, `gridcell` 语义；方向键自由穿梭单元格，空表引导与新增行自动聚焦标题列。
-  - **全量测试与回归**：新增 `scripts/verify-day9.mjs`（5 大核心交互验收全部通过，200 行插入 ~3ms、更新 ~0.8ms），Vitest 扩充至 **63 项全部通过**，全套历史回归零错误，生产构建连续两次成功。
+  - **全量测试与回归**：新增 `scripts/verify-day9.mjs`（5 大核心交互验收全部通过，200 行插入 ~3ms、更新 ~0.8ms），Vitest 扩充至 **66 项全部通过**，全套历史回归零错误，生产构建连续两次成功。
+- **Day 10 基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect)**：
+  - **数据契约与原子安全迁移**：为 5 大基础类型定义统一空值、解析、规整与校验规则；标签值统一持久化稳定 option ID；跨类型转换（如 text ↔ number ↔ checkbox ↔ select ↔ multiSelect）提供纯函数 `migrateCellForTypeChange` 与 `changePropertyType` 原子化迁移，级联清理删除选项，严禁悬空 ID 与 `NaN`。
+  - **专用单元格编辑器**：拆分 `TextCellEditor`（文本/标题编辑、IME 防误触）、`NumberCellEditor`（数字过滤、monospace 右对齐）、`SelectCellEditor`（单选 Popover、搜索过滤、新建选项、色彩高亮、上下方向键隔离）、`MultiSelectCellEditor`（多选 Popover、批量勾选、标签徽章展示、一键清除）。
+  - **字段与选项配置**：`ColumnConfigPopover` 支持列重命名、字段类型安全切换（主标题列禁止改类型与删除保护）、删除列；Select/Multi-select 支持选项新增、重命名、8 款精选预设色彩选择、删除与行数据级联清理。
+  - **无障碍与交互隔离**：Checkbox 支持 Space 键即时勾选与点击切换；选项 Popover 打开时隔离 Grid 导航，关闭后平滑归还单元格焦点。
+  - **全量测试与回归**：新增 `scripts/verify-day10.mjs`（5 大核心契约与 200 行原子迁移耗时 < 1ms），Vitest 测试扩充至 **72 项全部通过**，Day 2 ~ Day 9 全量历史回归零报错，默认生产构建连续两次以退出码 0 成功打包。
 
 ## 🎯 下一阶段：Sprint 2 (多维数据库引擎与三重视图，Day 8 - 14)
 
 - **Day 8**：多维数据库 Schema 设计与底层数据层 *(已完成)*。
 - **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑 *(已完成)*。
-- **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect)。
+- **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect) *(已完成)*。
+- **Day 11**：扩展字段类型 (Date, URL) 与行详情展开为页面 (Row as Page)。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -94,7 +101,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（63 项全部通过，0 警告 0 报错）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（**72 项全部通过**，0 警告 0 报错）。
+- 执行 `npm run verify:day10` 运行 Day 10 基础字段类型系统验收。
 - 执行 `npm run verify:day9` 运行 Day 9 表格视图核心交互验收。
 - 执行 `npm run verify:day8` 运行 Day 8 多维数据库 Schema 与底层数据层验收。
 - 执行 `npm run verify:day7` 运行 Day 7 本地离线持久化与数据完整性验收。
@@ -109,6 +117,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 2 - Day 9: 表格视图核心交互与单元格点按编辑]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 2 - Day 11: 扩展字段类型与行详情弹窗]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

@@ -8,10 +8,13 @@ import {
   Calendar,
   Link as LinkIcon,
   Table as TableIcon,
+  Plus,
+  ChevronDown,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { PropertyType } from '../../../types/database';
 import { cn } from '../../../utils/cn';
+import { ColumnConfigPopover } from './ColumnConfigPopover';
 
 export const PROPERTY_TYPE_ICONS: Record<PropertyType, React.FC<{ className?: string }>> = {
   title: Type,
@@ -66,6 +69,11 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
   const updateDatabaseProperty = useWorkspaceStore(
     (state) => state.updateDatabaseProperty
   );
+  const addDatabaseProperty = useWorkspaceStore(
+    (state) => state.addDatabaseProperty
+  );
+
+  const [configPropId, setConfigPropId] = useState<string | null>(null);
 
   const [activeResize, setActiveResize] = useState<{
     propId: string;
@@ -184,6 +192,14 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
     // 取消操作绝不提交 Store，保证列宽保持原值
   };
 
+  const handleAddColumn = () => {
+    const newIndex = propertyOrder.length + 1;
+    addDatabaseProperty(databaseId, {
+      name: `字段 ${newIndex}`,
+      type: 'text',
+    });
+  };
+
   return (
     <thead className="sticky top-0 z-20 bg-neutral-100/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm shadow-sm">
       <tr role="row" className="border-b border-border-light dark:border-border-dark">
@@ -210,13 +226,38 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
               }}
               className="group relative px-3 py-2 text-left font-medium text-text-secondary-light dark:text-text-secondary-dark text-xs border-r border-border-light/60 dark:border-border-dark/60 select-none transition-[width] duration-75"
             >
-              <div className="flex items-center gap-1.5 pr-2">
+              <div
+                data-testid={`db-header-trigger-${propId}`}
+                onClick={() => setConfigPropId(configPropId === propId ? null : propId)}
+                className="flex items-center gap-1.5 pr-2 cursor-pointer hover:text-text-primary-light dark:hover:text-text-primary-dark"
+              >
                 <IconComponent className="w-3.5 h-3.5 text-text-muted-light dark:text-text-muted-dark flex-shrink-0" />
                 <span className="truncate font-medium">{prop.name}</span>
                 <span className="text-[10px] text-text-muted-light dark:text-text-muted-dark px-1 py-0.2 bg-neutral-200/60 dark:bg-neutral-800 rounded font-normal ml-auto flex-shrink-0">
                   {PROPERTY_TYPE_LABELS[prop.type]}
                 </span>
+                <button
+                  type="button"
+                  data-testid={`db-header-menu-${propId}`}
+                  className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfigPropId(configPropId === propId ? null : propId);
+                  }}
+                  title="配置字段"
+                >
+                  <ChevronDown className="w-3 h-3 text-text-muted-light dark:text-text-muted-dark" />
+                </button>
               </div>
+
+              {/* 列配置弹层 */}
+              {configPropId === propId && (
+                <ColumnConfigPopover
+                  databaseId={databaseId}
+                  propertyId={propId}
+                  onClose={() => setConfigPropId(null)}
+                />
+              )}
 
               {/* 列宽调整手柄 */}
               <div
@@ -238,6 +279,23 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
             </th>
           );
         })}
+
+        {/* 表头最右侧新增列按钮 */}
+        <th
+          role="presentation"
+          data-testid="db-header-add-column"
+          className="w-10 px-2 py-2 text-center text-text-muted-light dark:text-text-muted-dark border-r border-border-light/60 dark:border-border-dark/60 font-normal"
+        >
+          <button
+            type="button"
+            data-testid="table-add-column-btn"
+            onClick={handleAddColumn}
+            className="p-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 rounded transition-colors inline-flex items-center justify-center text-text-muted-light hover:text-text-primary-light dark:hover:text-text-primary-dark"
+            title="添加列"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </th>
       </tr>
     </thead>
   );

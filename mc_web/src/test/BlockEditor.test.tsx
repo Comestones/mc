@@ -2908,4 +2908,423 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(cell1990).toBeInTheDocument();
     expect(cell1990).toHaveTextContent('大数据记录 #200');
   });
+
+  it('67. [Day 10] Checkbox 单元格：按 Space 键快速勾选/取消、鼠标点击切换、与 Store 数据同步持久化', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('复选框测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '已完成', type: 'checkbox' });
+    const checkPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '待办任务 1',
+      [checkPropId]: false,
+    });
+
+    const docId = 'doc-db-day10-checkbox';
+    registerTestDoc(docId, [
+      {
+        id: 'b-chk-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    expect(cell01).toBeInTheDocument();
+
+    // 1. 聚焦单元格后按空格键 Space -> 切换为 true
+    act(() => {
+      cell01.focus();
+      fireEvent.keyDown(cell01, { key: ' ' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[checkPropId]).toBe(true);
+
+    // 2. 再次按空格键 -> 切换为 false
+    act(() => {
+      fireEvent.keyDown(cell01, { key: ' ' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[checkPropId]).toBe(false);
+
+    // 3. 鼠标点击单元格 -> 切换为 true
+    act(() => {
+      fireEvent.click(cell01);
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[checkPropId]).toBe(true);
+  });
+
+  it('68. [Day 10] Number 单元格：双击进入编辑、输入合法数字与非法过滤、右对齐显示、Enter 提交', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('数字列测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '金额', type: 'number' });
+    const numPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '采购单 A',
+      [numPropId]: 120.5,
+    });
+
+    const docId = 'doc-db-day10-number';
+    registerTestDoc(docId, [
+      {
+        id: 'b-num-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    expect(cell01).toHaveTextContent('120.5');
+
+    // 1. 双击进入编辑态
+    act(() => {
+      fireEvent.doubleClick(cell01);
+    });
+    const numInput = screen.getByTestId('db-number-cell-input') as HTMLInputElement;
+    expect(numInput).toBeInTheDocument();
+    expect(numInput.value).toBe('120.5');
+
+    // 2. 输入合法数字 350 并按 Enter 提交
+    act(() => {
+      fireEvent.change(numInput, { target: { value: '350' } });
+      fireEvent.keyDown(numInput, { key: 'Enter' });
+    });
+
+    // 验证 Store 中已转换为 number 类型
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBe(350);
+    expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('350');
+  });
+
+  it('69. [Day 10] Select 单元格：打开 Popover、搜索过滤、选中选项更新 Tag 徽章与色彩、支持创建新选项并持久化稳定 ID', async () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('单选测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '优先度',
+      type: 'select',
+      options: [
+        { id: 'opt-high', name: '高', color: '#ef4444' },
+        { id: 'opt-med', name: '中', color: '#f59e0b' },
+      ],
+    });
+    const selectPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '任务 1',
+      [selectPropId]: 'opt-med',
+    });
+
+    const docId = 'doc-db-day10-select';
+    registerTestDoc(docId, [
+      {
+        id: 'b-sel-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    expect(cell01).toHaveTextContent('中');
+
+    // 1. 双击进入单选编辑态，弹出 Popover
+    act(() => {
+      fireEvent.doubleClick(cell01);
+    });
+    expect(screen.getByTestId('select-cell-popover')).toBeInTheDocument();
+
+    // 2. 点击已有选项 '高' (opt-high)
+    const optHigh = screen.getByTestId('select-option-opt-high');
+    act(() => {
+      fireEvent.click(optHigh);
+    });
+
+    // Popover 应关闭，Store 中的值更新为 'opt-high'
+    expect(screen.queryByTestId('select-cell-popover')).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[selectPropId]).toBe('opt-high');
+    expect(cell01).toHaveTextContent('高');
+
+    // 3. 再次打开 Popover，测试搜索并创建新选项
+    act(() => {
+      fireEvent.doubleClick(cell01);
+    });
+    const searchInput = screen.getByTestId('select-search-input');
+    act(() => {
+      fireEvent.change(searchInput, { target: { value: '紧急' } });
+    });
+
+    const createOptionBtn = screen.getByTestId('select-option-create');
+    expect(createOptionBtn).toHaveTextContent('创建 “紧急”');
+
+    await act(async () => {
+      fireEvent.click(createOptionBtn);
+    });
+
+    // 验证新选项已添加到属性选项列表中，并且单元格引用了新生成的稳定 opt-xxx ID
+    const updatedProp = useWorkspaceStore.getState().databases[dbId].properties[selectPropId];
+    const createdOpt = updatedProp.options?.find((o) => o.name === '紧急');
+    expect(createdOpt).toBeDefined();
+    expect(createdOpt?.id).toMatch(/^opt-/);
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[selectPropId]).toBe(createdOpt?.id);
+  });
+
+  it('70. [Day 10] MultiSelect 单元格：打开多选 Popover、批量切换选项、标签徽章展示、清除全部与关闭提交', async () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('多选测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '标签',
+      type: 'multiSelect',
+      options: [
+        { id: 'opt-frontend', name: '前端', color: '#3b82f6' },
+        { id: 'opt-backend', name: '后端', color: '#10b981' },
+        { id: 'opt-devops', name: '运维', color: '#8b5cf6' },
+      ],
+    });
+    const multiPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '项目架构',
+      [multiPropId]: ['opt-frontend'],
+    });
+
+    const docId = 'doc-db-day10-multiselect';
+    registerTestDoc(docId, [
+      {
+        id: 'b-multi-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const cell01 = screen.getByTestId('db-cell-0-1');
+    expect(cell01).toHaveTextContent('前端');
+
+    // 1. 双击进入多选编辑态
+    act(() => {
+      fireEvent.doubleClick(cell01);
+    });
+    expect(screen.getByTestId('multi-select-cell-popover')).toBeInTheDocument();
+
+    // 2. 勾选 '后端'
+    const optBackend = screen.getByTestId('multi-select-option-opt-backend');
+    act(() => {
+      fireEvent.click(optBackend);
+    });
+
+    // 3. 按 Tab 提交并完成
+    const multiInput = screen.getByTestId('multi-select-search-input');
+    act(() => {
+      fireEvent.keyDown(multiInput, { key: 'Tab' });
+    });
+
+    // 验证单元格包含两个标签 ID
+    const cellVal = useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[multiPropId] as string[];
+    expect(cellVal).toContain('opt-frontend');
+    expect(cellVal).toContain('opt-backend');
+    expect(cell01).toHaveTextContent('前端');
+    expect(cell01).toHaveTextContent('后端');
+  });
+
+  it('71. [Day 10] 列头配置：新增列（+按钮）、修改列名称、切换列类型（整列安全迁移，主标题列保护）、选项增删改与8色选择、删除列级联清除', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('列配置测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '备注', type: 'text' });
+    const textPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '项目 A',
+      [textPropId]: '100',
+    });
+
+    const docId = 'doc-db-day10-header-config';
+    registerTestDoc(docId, [
+      {
+        id: 'b-hdr-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 点击表头最右侧的添加列按钮
+    const addColBtn = screen.getByTestId('table-add-column-btn');
+    act(() => {
+      fireEvent.click(addColBtn);
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].propertyOrder.length).toBe(3);
+
+    // 2. 打开 '备注' 列配置弹层
+    const trigger = screen.getByTestId(`db-header-trigger-${textPropId}`);
+    act(() => {
+      fireEvent.click(trigger);
+    });
+    expect(screen.getByTestId('column-config-popover')).toBeInTheDocument();
+
+    // 3. 修改列名称
+    const nameInput = screen.getByTestId('column-name-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(nameInput, { target: { value: '数值列' } });
+      fireEvent.blur(nameInput);
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].properties[textPropId].name).toBe('数值列');
+
+    // 4. 将 text 列类型切换为 number 列，验证原有 "100" 安全转换为数字 100
+    const typeSelect = screen.getByTestId('column-type-select');
+    act(() => {
+      fireEvent.change(typeSelect, { target: { value: 'number' } });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].properties[textPropId].type).toBe('number');
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[textPropId]).toBe(100);
+
+    // 5. 验证主标题列禁止修改类型与删除
+    act(() => {
+      fireEvent.click(screen.getByTestId('column-config-close'));
+    });
+    const titleTrigger = screen.getByTestId(`db-header-trigger-${titlePropId}`);
+    act(() => {
+      fireEvent.click(titleTrigger);
+    });
+    expect(screen.getByTestId('column-type-title-disabled')).toBeInTheDocument();
+    expect(screen.queryByTestId('delete-column-btn')).not.toBeInTheDocument();
+
+    // 6. 将新添加的第 3 列切换为 select 并管理选项
+    act(() => {
+      fireEvent.click(screen.getByTestId('column-config-close'));
+    });
+    const thirdPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[2];
+    const thirdTrigger = screen.getByTestId(`db-header-trigger-${thirdPropId}`);
+    act(() => {
+      fireEvent.click(thirdTrigger);
+    });
+    const thirdTypeSelect = screen.getByTestId('column-type-select');
+    act(() => {
+      fireEvent.change(thirdTypeSelect, { target: { value: 'select' } });
+    });
+
+    // 新增选项并选择颜色
+    const newOptInput = screen.getByTestId('new-option-input');
+    const addOptBtn = screen.getByTestId('add-option-btn');
+    act(() => {
+      fireEvent.change(newOptInput, { target: { value: '状态A' } });
+      fireEvent.click(addOptBtn);
+    });
+    const thirdProp = useWorkspaceStore.getState().databases[dbId].properties[thirdPropId];
+    expect(thirdProp.options?.length).toBe(1);
+    expect(thirdProp.options?.[0].name).toBe('状态A');
+
+    // 7. 删除此列并级联清理
+    const delColBtn = screen.getByTestId('delete-column-btn');
+    act(() => {
+      fireEvent.click(delColBtn);
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].propertyOrder).not.toContain(thirdPropId);
+    expect(useWorkspaceStore.getState().databases[dbId].properties[thirdPropId]).toBeUndefined();
+  });
+
+  it('72. [Day 10] UI 编辑基础字段后防抖自动保存、重建 Store 并执行 hydrateStore 刷新恢复端到端测试', async () => {
+    const persistentStorage = new MemoryStorage(null, { isPersistent: true });
+    useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const dbId = useWorkspaceStore.getState().createDatabase('Day10持久化全类型测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '评分', type: 'number' });
+    const numPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '已核验', type: 'checkbox' });
+    const checkPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[2];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '标签',
+      type: 'select',
+      options: [{ id: 'opt-v1', name: '正式版', color: '#10b981' }],
+    });
+    const selPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[3];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '模块 1',
+      [numPropId]: 10,
+      [checkPropId]: false,
+      [selPropId]: 'opt-v1',
+    });
+
+    const docId = 'doc-db-day10-persist-full';
+    registerTestDoc(docId, [
+      {
+        id: 'b-persist-day10',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    const { unmount } = render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. UI 修改 Number 单元格
+    const numCell = screen.getByTestId('db-cell-0-1');
+    act(() => {
+      fireEvent.doubleClick(numCell);
+    });
+    const numInput = screen.getByTestId('db-number-cell-input');
+    act(() => {
+      fireEvent.change(numInput, { target: { value: '99' } });
+      fireEvent.keyDown(numInput, { key: 'Enter' });
+    });
+
+    // 2. UI 点击 Checkbox 单元格
+    const chkCell = screen.getByTestId('db-cell-0-2');
+    act(() => {
+      fireEvent.click(chkCell);
+    });
+
+    // 3. 等待 550ms 防抖持久化
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    const snapshot = await persistentStorage.load();
+    expect(snapshot).not.toBeNull();
+    const persistedDb = snapshot?.databases?.[dbId];
+    const rowId = persistedDb?.rowOrder[0]!;
+    expect(persistedDb?.rows[rowId]?.cells[numPropId]).toBe(99);
+    expect(persistedDb?.rows[rowId]?.cells[checkPropId]).toBe(true);
+
+    unmount();
+
+    // 4. 重建 Store 并恢复
+    useWorkspaceStore.setState({
+      databases: {},
+      isHydrated: false,
+      storageStatus: 'idle',
+    });
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const restoredDb = useWorkspaceStore.getState().getDatabase(dbId);
+    expect(restoredDb).toBeDefined();
+    expect(restoredDb?.rows[rowId]?.cells[numPropId]).toBe(99);
+    expect(restoredDb?.rows[rowId]?.cells[checkPropId]).toBe(true);
+    expect(restoredDb?.rows[rowId]?.cells[selPropId]).toBe('opt-v1');
+
+    // 5. 重新挂载组件验证渲染
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+    expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('99');
+    expect(screen.getByTestId('db-cell-0-3')).toHaveTextContent('正式版');
+  });
 });
+

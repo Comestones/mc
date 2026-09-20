@@ -16,7 +16,8 @@
     "verify:day6": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day6.mjs",
     "verify:day7": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day7.mjs",
     "verify:day8": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day8.mjs",
-    "verify:day9": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day9.mjs"
+    "verify:day9": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day9.mjs",
+    "verify:day10": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day10.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

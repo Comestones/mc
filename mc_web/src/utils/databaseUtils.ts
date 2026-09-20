@@ -340,8 +340,24 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
       for (const [cellPropId, val] of Object.entries(row.cells)) {
         if (validPropIds.has(cellPropId)) {
           const propDef = properties[cellPropId];
-          if (validateCellValue(val, propDef?.type || 'text')) {
-            cleanCells[cellPropId] = val;
+          let normalizedVal = val;
+
+          // 兼容历史数据：若 select / multiSelect 的单元格值为标签名称，自愈规整为稳定 option ID
+          if (propDef?.type === 'select' && typeof val === 'string') {
+            const matchedOpt = propDef.options?.find((o) => o.name === val || o.id === val);
+            if (matchedOpt) {
+              normalizedVal = matchedOpt.id;
+            }
+          } else if (propDef?.type === 'multiSelect') {
+            const arr = Array.isArray(val) ? val : [String(val)];
+            normalizedVal = arr.map((item) => {
+              const matchedOpt = propDef.options?.find((o) => o.name === item || o.id === item);
+              return matchedOpt ? matchedOpt.id : String(item);
+            });
+          }
+
+          if (validateCellValue(normalizedVal, propDef?.type || 'text')) {
+            cleanCells[cellPropId] = normalizedVal;
           }
         }
       }
@@ -686,3 +702,281 @@ export function reorderRows(
     updatedAt: Date.now(),
   };
 }
+
+/**
+ * 字段类型切换时的单元格数据安全迁移纯函数
+ * 确保类型转换后单元格值严格满足目标类型的合法形态，杜绝 NaN、非法格式与悬空引用
+ */
+export function migrateCellForTypeChange(
+  val: CellValue,
+  oldType: PropertyType,
+  newType: PropertyType,
+  options?: SelectOption[]
+): CellValue {
+  if (val === null || val === undefined || val === '') {
+    if (newType === 'checkbox') return false;
+    if (newType === 'multiSelect') return [];
+    return null;
+  }
+
+  if (oldType === newType) {
+    if (newType === 'checkbox') return Boolean(val);
+    if (newType === 'multiSelect') return Array.isArray(val) ? val : [String(val)];
+    return val;
+  }
+
+  switch (newType) {
+    case 'text': {
+      if (oldType === 'select') {
+        const opt = options?.find((o) => o.id === val || o.name === val);
+        return opt ? opt.name : String(val);
+      }
+      if (oldType === 'multiSelect') {
+        const arr = Array.isArray(val) ? val : [val];
+        const names = arr
+          .map((id) => options?.find((o) => o.id === id || o.name === id)?.name || String(id))
+          .filter(Boolean);
+        return names.join(', ');
+      }
+      if (oldType === 'checkbox') {
+        return val ? 'true' : 'false';
+      }
+      return String(val);
+    }
+
+    case 'number': {
+      if (oldType === 'checkbox') {
+        return val ? 1 : 0;
+      }
+      const n = typeof val === 'number' ? val : parseFloat(String(val).trim());
+      return Number.isFinite(n) ? n : null;
+    }
+
+    case 'checkbox': {
+      if (typeof val === 'boolean') return val;
+      if (typeof val === 'number') return val !== 0 && !Number.isNaN(val);
+      const str = String(val).toLowerCase().trim();
+      return str === 'true' || str === '1' || str === 'yes';
+    }
+
+    case 'select': {
+      if (oldType === 'multiSelect' && Array.isArray(val)) {
+        return val.length > 0 ? val[0] : null;
+      }
+      const str = String(val).trim();
+      if (!str) return null;
+      const matched = options?.find((o) => o.id === str || o.name === str);
+      return matched ? matched.id : str;
+    }
+
+    case 'multiSelect': {
+      if (oldType === 'select') {
+        const str = String(val).trim();
+        if (!str) return [];
+        const matched = options?.find((o) => o.id === str || o.name === str);
+        return [matched ? matched.id : str];
+      }
+      if (Array.isArray(val)) {
+        return val.map(String).filter(Boolean);
+      }
+      const str = String(val).trim();
+      return str ? [str] : [];
+    }
+
+    case 'date':
+    case 'url':
+    case 'title':
+    default:
+      return String(val);
+  }
+}
+
+/**
+ * 原子化修改属性列类型，并自动迁移所有行中该列单元格的数据
+ */
+export function changePropertyType(
+  db: DatabaseSchema,
+  propertyId: string,
+  newType: PropertyType
+): DatabaseSchema {
+  const existing = db.properties[propertyId];
+  if (!existing) return db;
+
+  // 标题列不可更改类型
+  if (existing.type === 'title' || newType === 'title') {
+    throw new Error('Cannot change the type of or to the primary title column');
+  }
+
+  if (existing.type === newType) return db;
+
+  const updatedProp: DatabaseProperty = {
+    ...existing,
+    type: newType,
+    ...(newType === 'select' || newType === 'multiSelect'
+      ? { options: existing.options || [] }
+      : {}),
+  };
+
+  const nextRows: Record<string, DatabaseRow> = {};
+  for (const [rowId, row] of Object.entries(db.rows)) {
+    const oldVal = row.cells[propertyId];
+    const migratedVal = migrateCellForTypeChange(
+      oldVal,
+      existing.type,
+      newType,
+      updatedProp.options
+    );
+    const nextCells = { ...row.cells };
+    if (migratedVal === null || migratedVal === undefined) {
+      delete nextCells[propertyId];
+    } else {
+      nextCells[propertyId] = migratedVal;
+    }
+
+    nextRows[rowId] = {
+      ...row,
+      cells: nextCells,
+      updatedAt: Date.now(),
+    };
+  }
+
+  return {
+    ...db,
+    properties: {
+      ...db.properties,
+      [propertyId]: updatedProp,
+    },
+    rows: nextRows,
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * 为 select/multiSelect 属性列添加新选项
+ */
+export function addSelectOption(
+  db: DatabaseSchema,
+  propertyId: string,
+  option: Omit<SelectOption, 'id'> & { id?: string }
+): DatabaseSchema {
+  const prop = db.properties[propertyId];
+  if (!prop || (prop.type !== 'select' && prop.type !== 'multiSelect')) {
+    throw new Error(`Property "${propertyId}" is not a select or multiSelect property`);
+  }
+
+  const existingOptions = prop.options || [];
+  const optId = option.id || `opt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  if (existingOptions.some((o) => o.id === optId)) {
+    throw new Error(`Option with id "${optId}" already exists`);
+  }
+
+  const newOption: SelectOption = {
+    id: optId,
+    name: option.name.trim() || '新选项',
+    color: option.color || 'blue',
+  };
+
+  const updatedProp: DatabaseProperty = {
+    ...prop,
+    options: [...existingOptions, newOption],
+  };
+
+  return {
+    ...db,
+    properties: {
+      ...db.properties,
+      [propertyId]: updatedProp,
+    },
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * 更新 select/multiSelect 属性列的选项（重命名、修改颜色）
+ */
+export function updateSelectOption(
+  db: DatabaseSchema,
+  propertyId: string,
+  optionId: string,
+  updates: Partial<SelectOption>
+): DatabaseSchema {
+  const prop = db.properties[propertyId];
+  if (!prop || (prop.type !== 'select' && prop.type !== 'multiSelect')) {
+    return db;
+  }
+
+  const existingOptions = prop.options || [];
+  const updatedOptions = existingOptions.map((opt) =>
+    opt.id === optionId ? { ...opt, ...updates, id: optionId } : opt
+  );
+
+  return {
+    ...db,
+    properties: {
+      ...db.properties,
+      [propertyId]: {
+        ...prop,
+        options: updatedOptions,
+      },
+    },
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * 删除 select/multiSelect 属性列的选项，并级联清理所有行中的该选项引用
+ */
+export function deleteSelectOption(
+  db: DatabaseSchema,
+  propertyId: string,
+  optionId: string
+): DatabaseSchema {
+  const prop = db.properties[propertyId];
+  if (!prop || (prop.type !== 'select' && prop.type !== 'multiSelect')) {
+    return db;
+  }
+
+  const nextOptions = (prop.options || []).filter((opt) => opt.id !== optionId);
+  const updatedProp: DatabaseProperty = {
+    ...prop,
+    options: nextOptions,
+  };
+
+  const nextRows: Record<string, DatabaseRow> = {};
+  for (const [rowId, row] of Object.entries(db.rows)) {
+    const val = row.cells[propertyId];
+    let nextVal = val;
+
+    if (prop.type === 'select') {
+      if (val === optionId) {
+        nextVal = null;
+      }
+    } else if (prop.type === 'multiSelect' && Array.isArray(val)) {
+      nextVal = val.filter((id) => id !== optionId);
+    }
+
+    const nextCells = { ...row.cells };
+    if (nextVal === null || nextVal === undefined || (Array.isArray(nextVal) && nextVal.length === 0)) {
+      delete nextCells[propertyId];
+    } else {
+      nextCells[propertyId] = nextVal;
+    }
+
+    nextRows[rowId] = {
+      ...row,
+      cells: nextCells,
+      updatedAt: Date.now(),
+    };
+  }
+
+  return {
+    ...db,
+    properties: {
+      ...db.properties,
+      [propertyId]: updatedProp,
+    },
+    rows: nextRows,
+    updatedAt: Date.now(),
+  };
+}
+

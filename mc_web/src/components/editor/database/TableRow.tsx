@@ -72,6 +72,7 @@ export const TableRow: React.FC<TableRowProps> = ({
           />
         );
       })}
+      <td className="border-b border-border-light/60 dark:border-border-dark/60" />
     </tr>
   );
 };

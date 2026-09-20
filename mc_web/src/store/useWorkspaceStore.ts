@@ -7,6 +7,8 @@ import type {
   DatabaseRow,
   CellValue,
   DatabaseMetaUpdates,
+  PropertyType,
+  SelectOption,
 } from '../types/database';
 import { normalizeBlock } from '../utils/blockUtils';
 import { cascadeDeletePage } from '../utils/workspaceUtils';
@@ -18,6 +20,10 @@ import {
   updateProperty,
   deleteProperty,
   reorderProperties,
+  changePropertyType,
+  addSelectOption,
+  updateSelectOption,
+  deleteSelectOption,
   addRow,
   updateRow,
   updateCell,
@@ -77,6 +83,10 @@ interface WorkspaceState {
   deleteDatabase: (id: string) => void;
   addDatabaseProperty: (databaseId: string, property: Omit<DatabaseProperty, 'id'> & { id?: string }) => void;
   updateDatabaseProperty: (databaseId: string, propertyId: string, updates: Partial<DatabaseProperty>) => void;
+  changeDatabasePropertyType: (databaseId: string, propertyId: string, newType: PropertyType) => void;
+  addDatabaseSelectOption: (databaseId: string, propertyId: string, option: Omit<SelectOption, 'id'> & { id?: string }) => void;
+  updateDatabaseSelectOption: (databaseId: string, propertyId: string, optionId: string, updates: Partial<SelectOption>) => void;
+  deleteDatabaseSelectOption: (databaseId: string, propertyId: string, optionId: string) => void;
   deleteDatabaseProperty: (databaseId: string, propertyId: string) => void;
   reorderDatabaseProperties: (databaseId: string, newOrder: string[]) => void;
   addDatabaseRow: (databaseId: string, initialCells?: Record<string, CellValue>, atIndex?: number) => void;
@@ -588,6 +598,70 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         const db = state.databases[databaseId];
         if (!db) return state;
         const nextDb = updateProperty(db, propertyId, updates);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: safeDb,
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    changeDatabasePropertyType: (databaseId, propertyId, newType) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        const nextDb = changePropertyType(db, propertyId, newType);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: safeDb,
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    addDatabaseSelectOption: (databaseId, propertyId, option) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        const nextDb = addSelectOption(db, propertyId, option);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: safeDb,
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseSelectOption: (databaseId, propertyId, optionId, updates) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        const nextDb = updateSelectOption(db, propertyId, optionId, updates);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: safeDb,
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    deleteDatabaseSelectOption: (databaseId, propertyId, optionId) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        const nextDb = deleteSelectOption(db, propertyId, optionId);
         const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
