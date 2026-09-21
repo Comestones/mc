@@ -147,6 +147,15 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
+          aria-expanded={true}
+          aria-autocomplete="list"
+          aria-controls="multi-select-options-listbox"
+          aria-activedescendant={
+            items[highlightIndex]
+              ? `multi-select-opt-${items[highlightIndex].type === 'option' ? (items[highlightIndex] as any).option.id : items[highlightIndex].type}`
+              : undefined
+          }
           data-testid="multi-select-search-input"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -157,7 +166,9 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
       </div>
 
       <div
+        id="multi-select-options-listbox"
         role="listbox"
+        aria-label="多选标签"
         data-testid="multi-select-options-list"
         className="max-h-52 overflow-y-auto p-1 space-y-0.5"
       >
@@ -173,6 +184,7 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
               return (
                 <div
                   key="clear-all"
+                  id="multi-select-opt-clear-all"
                   role="option"
                   aria-selected={false}
                   data-testid="multi-select-clear-all"
@@ -191,6 +203,7 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
               return (
                 <div
                   key="create-option"
+                  id="multi-select-opt-create"
                   role="option"
                   aria-selected={false}
                   data-testid="multi-select-option-create"
@@ -212,6 +225,7 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
             return (
               <div
                 key={opt.id}
+                id={`multi-select-opt-${opt.id}`}
                 role="option"
                 aria-selected={isSelected}
                 data-testid={`multi-select-option-${opt.id}`}

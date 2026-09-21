@@ -2,6 +2,9 @@
 import assert from 'node:assert/strict';
 import {
   createDatabase,
+  validateDatabaseSchema,
+  normalizeDatabaseSchema,
+  getIncompatibleCellCount,
   addProperty,
   addRow,
   updateCell,
@@ -268,4 +271,171 @@ console.log('▶ 测试 5: 200 行 5 大字段全量装载与列类型迁移基�
   console.log('  ✔ 200 行多字段数据装载与整列原子类型迁移性能达标');
 }
 
-console.log('\n🎉 Day 10: 基础字段类型系统 (Property Types) 5 大模块全部验收通过！');
+// =================================================================
+// 测试 6: 数据库 Schema 严格契约反例拦截、损坏数据自愈与类型切换预检查
+// =================================================================
+console.log('▶ 测试 6: 数据库 Schema 严格契约反例拦截、损坏数据自愈与类型切换预检查...');
+{
+  const validDb = createDatabase('契约测试库');
+  const titlePropId = DEFAULT_TITLE_PROPERTY_ID;
+
+  // 1. 反例验证：非 select / multiSelect 字段携带 options 必须被拦截
+  const corruptDb1 = {
+    ...validDb,
+    properties: {
+      ...validDb.properties,
+      'prop-text-bad': {
+        id: 'prop-text-bad',
+        name: '非法带选项文本列',
+        type: 'text',
+        options: [{ id: 'opt-x', name: 'X' }],
+      },
+    },
+    propertyOrder: [...validDb.propertyOrder, 'prop-text-bad'],
+  };
+  assert.equal(validateDatabaseSchema(corruptDb1), false, '普通 text 字段携带 options 必须返回 false');
+
+  // 自愈后 options 必须被清除
+  const healedDb1 = normalizeDatabaseSchema(corruptDb1);
+  assert.equal(validateDatabaseSchema(healedDb1), true, '自愈后必须符合合法 Schema');
+  assert.equal(healedDb1.properties['prop-text-bad'].options, undefined, 'text 字段上的 options 必须被清理');
+
+  // 2. 反例验证：select 选项包含空 ID、重复 ID 或空 Name 必须被拦截
+  const corruptDb2 = {
+    ...validDb,
+    properties: {
+      ...validDb.properties,
+      'prop-sel-bad': {
+        id: 'prop-sel-bad',
+        name: '坏单选列',
+        type: 'select',
+        options: [
+          { id: '', name: '空ID项' },
+          { id: 'dup', name: '重复1' },
+          { id: 'dup', name: '重复2' },
+          { id: 'opt-valid', name: '  ' }, // 空白名称
+        ],
+      },
+    },
+    propertyOrder: [...validDb.propertyOrder, 'prop-sel-bad'],
+  };
+  assert.equal(validateDatabaseSchema(corruptDb2), false, '空ID、重复ID或空名称选项必须返回 false');
+
+  const healedDb2 = normalizeDatabaseSchema(corruptDb2);
+  assert.equal(validateDatabaseSchema(healedDb2), true, '自愈后坏选项必须被清洗并满足 Schema');
+  const cleanOpts = healedDb2.properties['prop-sel-bad'].options;
+  assert.equal(cleanOpts.length, 1, '去重与去空后仅保留 1 个合法选项');
+  assert.equal(cleanOpts[0].id, 'dup');
+
+  // 3. 反例验证：单元格包含悬空 option ID 或 multiSelect 重复项必须被拦截
+  let db3 = createDatabase('悬空引用测试库');
+  db3 = addProperty(db3, {
+    id: 'prop-sel',
+    name: '状态',
+    type: 'select',
+    options: [{ id: 'opt-1', name: '进行中' }],
+  });
+  db3 = addProperty(db3, {
+    id: 'prop-multi',
+    name: '标签',
+    type: 'multiSelect',
+    options: [
+      { id: 'opt-tag1', name: '标签1' },
+      { id: 'opt-tag2', name: '标签2' },
+    ],
+  });
+
+  // 构造悬空单元格数据与重复标签
+  const corruptDb3 = {
+    ...db3,
+    rows: {
+      'row-bad': {
+        id: 'row-bad',
+        databaseId: db3.id,
+        cells: {
+          [titlePropId]: '坏数据行',
+          'prop-sel': 'opt-ghost-dangling', // 悬空选项引用
+          'prop-multi': ['opt-tag1', 'opt-tag1', 'opt-ghost'], // 重复与悬空
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    },
+    rowOrder: ['row-bad'],
+  };
+  assert.equal(validateDatabaseSchema(corruptDb3), false, '包含悬空 option 引用的数据库必须校验失败');
+
+  // 自愈：清理悬空 select 单元格，去重并过滤悬空 multiSelect 项
+  const healedDb3 = normalizeDatabaseSchema(corruptDb3);
+  assert.equal(validateDatabaseSchema(healedDb3), true, '自愈后单元格悬空引用必须被清洗');
+  assert.equal(healedDb3.rows['row-bad'].cells['prop-sel'], undefined, '悬空单选单元格应被清除');
+  assert.deepEqual(healedDb3.rows['row-bad'].cells['prop-multi'], ['opt-tag1'], '多选单元格应去重并剔除悬空项');
+
+  // 4. 历史标签名称自愈：唯一命中迁移为 ID，歧义（同名）或未匹配清空
+  let db4 = createDatabase('标签名迁移测试库');
+  db4 = addProperty(db4, {
+    id: 'prop-status',
+    name: '进度',
+    type: 'select',
+    options: [
+      { id: 'opt-done', name: '已完成' },
+      { id: 'opt-ambig-1', name: '待审' },
+      { id: 'opt-ambig-2', name: '待审' }, // 歧义同名项
+    ],
+  });
+  const corruptDb4 = {
+    ...db4,
+    rows: {
+      'row-1': {
+        id: 'row-1',
+        databaseId: db4.id,
+        cells: { [titlePropId]: '行1', 'prop-status': '已完成' }, // 唯一命中
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      'row-2': {
+        id: 'row-2',
+        databaseId: db4.id,
+        cells: { [titlePropId]: '行2', 'prop-status': '待审' }, // 歧义命中
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      'row-3': {
+        id: 'row-3',
+        databaseId: db4.id,
+        cells: { [titlePropId]: '行3', 'prop-status': '无匹配状态' }, // 未匹配
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    },
+    rowOrder: ['row-1', 'row-2', 'row-3'],
+  };
+  const healedDb4 = normalizeDatabaseSchema(corruptDb4);
+  assert.equal(healedDb4.rows['row-1'].cells['prop-status'], 'opt-done', '唯一命中标签名应自愈迁移为稳定 ID');
+  assert.equal(healedDb4.rows['row-2'].cells['prop-status'], undefined, '同名歧义标签应安全清空');
+  assert.equal(healedDb4.rows['row-3'].cells['prop-status'], undefined, '未匹配标签应安全清空');
+
+  // 5. getIncompatibleCellCount 破坏性类型切换预检查
+  let db5 = createDatabase('预检查测试库');
+  db5 = addProperty(db5, { id: 'col-text', name: '混合数据', type: 'text' });
+  db5 = addRow(db5, { [titlePropId]: 'A', 'col-text': '123' });
+  db5 = addRow(db5, { [titlePropId]: 'B', 'col-text': 'abc' });
+  db5 = addRow(db5, { [titlePropId]: 'C', 'col-text': '' });
+
+  // 切换为 number：行 B 无法转换将丢失数据 -> count === 1
+  assert.equal(getIncompatibleCellCount(db5, 'col-text', 'number'), 1);
+
+  // 切换为 select（无 options）：行 A、B 均无法匹配 -> count === 2
+  assert.equal(getIncompatibleCellCount(db5, 'col-text', 'select'), 2);
+
+  // 纯全数字列切换为 number：count === 0
+  let db6 = createDatabase('安全转换库');
+  db6 = addProperty(db6, { id: 'col-num-text', name: '纯数字文本', type: 'text' });
+  db6 = addRow(db6, { [titlePropId]: 'A', 'col-num-text': '100' });
+  db6 = addRow(db6, { [titlePropId]: 'B', 'col-num-text': '200' });
+  assert.equal(getIncompatibleCellCount(db6, 'col-num-text', 'number'), 0);
+
+  console.log('  ✔ 数据库 Schema 严格契约反例拦截、损坏数据自愈与类型切换预检查全部通过');
+}
+
+console.log('\n🎉 Day 10: 基础字段类型系统 (Property Types) 6 大模块全部验收通过！');

@@ -13,7 +13,11 @@ export const DEFAULT_TITLE_PROPERTY_ID = 'prop-title';
 /**
  * 校验单元格值形态是否符合属性类型契约
  */
-export function validateCellValue(val: unknown, type: PropertyType): boolean {
+export function validateCellValue(
+  val: unknown,
+  type: PropertyType,
+  options?: SelectOption[]
+): boolean {
   if (val === null || val === undefined) return true;
   switch (type) {
     case 'title':
@@ -25,10 +29,22 @@ export function validateCellValue(val: unknown, type: PropertyType): boolean {
       return typeof val === 'number' && Number.isFinite(val);
     case 'checkbox':
       return typeof val === 'boolean';
-    case 'select':
-      return typeof val === 'string';
-    case 'multiSelect':
-      return Array.isArray(val) && val.every((item) => typeof item === 'string');
+    case 'select': {
+      if (typeof val !== 'string') return false;
+      if (options !== undefined) {
+        return options.some((opt) => opt.id === val);
+      }
+      return true;
+    }
+    case 'multiSelect': {
+      if (!Array.isArray(val)) return false;
+      if (!val.every((item) => typeof item === 'string')) return false;
+      if (new Set(val).size !== val.length) return false;
+      if (options !== undefined) {
+        return val.every((item) => options.some((opt) => opt.id === item));
+      }
+      return true;
+    }
     default:
       return false;
   }
@@ -163,13 +179,23 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
       }
     }
 
-    // 校验 options（若指定则必须为合法 SelectOption 数组）
-    if (prop.options !== undefined) {
-      if (!Array.isArray(prop.options)) return false;
-      for (const opt of prop.options) {
-        if (!opt || typeof opt !== 'object') return false;
-        if (typeof opt.id !== 'string' || typeof opt.name !== 'string') return false;
-        if (opt.color !== undefined && typeof opt.color !== 'string') return false;
+    // 校验 options：仅允许在 select / multiSelect 字段中存在，其他字段携带 options 视为非法契约
+    if (prop.type !== 'select' && prop.type !== 'multiSelect') {
+      if (prop.options !== undefined) return false;
+    } else {
+      // select / multiSelect 必须为合法 SelectOption 数组且 option.id 唯一非空
+      if (prop.options !== undefined) {
+        if (!Array.isArray(prop.options)) return false;
+        const optIdSet = new Set<string>();
+        for (const opt of prop.options) {
+          if (!opt || typeof opt !== 'object') return false;
+          if (typeof opt.id !== 'string' || !opt.id.trim()) return false;
+          if (typeof opt.name !== 'string' || !opt.name.trim()) return false;
+          if (opt.color !== undefined && typeof opt.color !== 'string') return false;
+          const cleanId = opt.id.trim();
+          if (optIdSet.has(cleanId)) return false; // 重复 option ID 拦截
+          optIdSet.add(cleanId);
+        }
       }
     }
   }
@@ -201,12 +227,12 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
     if (!row.cells || typeof row.cells !== 'object') return false;
     if (!rowSet.has(rowId)) return false;
 
-    // 校验 cells：禁止包含未在 properties 中声明的悬空属性，且值形态必须符合类型契约
+    // 校验 cells：禁止包含未在 properties 中声明的悬空属性，且值形态必须符合类型契约与选项引用
     for (const [cellPropId, cellValue] of Object.entries(row.cells)) {
       if (!propSet.has(cellPropId)) return false; // 悬空属性直接拦截
       const propDef = db.properties[cellPropId];
-      if (!validateCellValue(cellValue, propDef.type)) {
-        return false; // 非法单元格值形态拦截
+      if (!validateCellValue(cellValue, propDef.type, propDef.options)) {
+        return false; // 非法单元格值形态或悬空 option 引用拦截
       }
     }
   }
@@ -247,15 +273,36 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
       typeof prop.width === 'number' && Number.isFinite(prop.width) && prop.width > 0
         ? prop.width
         : 180;
-    const safeOptions = Array.isArray(prop.options)
-      ? prop.options.filter(
-          (opt): opt is SelectOption =>
-            !!opt &&
-            typeof opt === 'object' &&
-            typeof opt.id === 'string' &&
-            typeof opt.name === 'string'
-        )
-      : undefined;
+    const safeOptions =
+      safeType === 'select' || safeType === 'multiSelect'
+        ? Array.isArray(prop.options)
+          ? (() => {
+              const seen = new Set<string>();
+              const validOpts: SelectOption[] = [];
+              for (const opt of prop.options) {
+                if (
+                  opt &&
+                  typeof opt === 'object' &&
+                  typeof opt.id === 'string' &&
+                  opt.id.trim() &&
+                  typeof opt.name === 'string' &&
+                  opt.name.trim()
+                ) {
+                  const cleanId = opt.id.trim();
+                  if (!seen.has(cleanId)) {
+                    seen.add(cleanId);
+                    validOpts.push({
+                      id: cleanId,
+                      name: opt.name.trim(),
+                      ...(typeof opt.color === 'string' ? { color: opt.color } : {}),
+                    });
+                  }
+                }
+              }
+              return validOpts;
+            })()
+          : []
+        : undefined;
 
     properties[id] = {
       ...prop,
@@ -265,6 +312,9 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
       width: safeWidth,
       ...(safeOptions ? { options: safeOptions } : {}),
     };
+    if (safeType !== 'select' && safeType !== 'multiSelect') {
+      delete properties[id].options;
+    }
   }
 
   let propertyOrder = Array.isArray(database.propertyOrder)
@@ -343,20 +393,48 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
           let normalizedVal = val;
 
           // 兼容历史数据：若 select / multiSelect 的单元格值为标签名称，自愈规整为稳定 option ID
-          if (propDef?.type === 'select' && typeof val === 'string') {
-            const matchedOpt = propDef.options?.find((o) => o.name === val || o.id === val);
-            if (matchedOpt) {
-              normalizedVal = matchedOpt.id;
+          if (propDef?.type === 'select') {
+            if (typeof val === 'string') {
+              const trimmed = val.trim();
+              const matchedOpt = propDef.options?.find((o) => o.id === trimmed);
+              if (matchedOpt) {
+                normalizedVal = matchedOpt.id;
+              } else {
+                // 历史标签名仅在唯一命中时迁移，歧义或未匹配时清空
+                const matchesByName = propDef.options?.filter((o) => o.name === trimmed) || [];
+                if (matchesByName.length === 1) {
+                  normalizedVal = matchesByName[0].id;
+                } else {
+                  normalizedVal = null;
+                }
+              }
+            } else {
+              normalizedVal = null;
             }
           } else if (propDef?.type === 'multiSelect') {
-            const arr = Array.isArray(val) ? val : [String(val)];
-            normalizedVal = arr.map((item) => {
-              const matchedOpt = propDef.options?.find((o) => o.name === item || o.id === item);
-              return matchedOpt ? matchedOpt.id : String(item);
-            });
+            const arr = Array.isArray(val) ? val : typeof val === 'string' ? [val] : [];
+            const resolvedIds: string[] = [];
+            for (const item of arr) {
+              const str = String(item).trim();
+              if (!str) continue;
+              const matchedOpt = propDef.options?.find((o) => o.id === str);
+              if (matchedOpt) {
+                resolvedIds.push(matchedOpt.id);
+              } else {
+                const matchesByName = propDef.options?.filter((o) => o.name === str) || [];
+                if (matchesByName.length === 1) {
+                  resolvedIds.push(matchesByName[0].id);
+                }
+              }
+            }
+            normalizedVal = Array.from(new Set(resolvedIds));
           }
 
-          if (validateCellValue(normalizedVal, propDef?.type || 'text')) {
+          if (
+            normalizedVal !== null &&
+            normalizedVal !== undefined &&
+            validateCellValue(normalizedVal, propDef?.type || 'text', propDef?.options)
+          ) {
             cleanCells[cellPropId] = normalizedVal;
           }
         }
@@ -551,7 +629,7 @@ export function addRow(
   const validCells: Record<string, CellValue> = {};
   for (const [propId, val] of Object.entries(initialCells)) {
     const propDef = db.properties[propId];
-    if (propDef && validateCellValue(val, propDef.type)) {
+    if (propDef && validateCellValue(val, propDef.type, propDef.options)) {
       validCells[propId] = val;
     }
   }
@@ -597,7 +675,7 @@ export function updateRow(
     const sanitizedCells: Record<string, CellValue> = {};
     for (const [propId, val] of Object.entries(updates.cells)) {
       const propDef = db.properties[propId];
-      if (propDef && validateCellValue(val, propDef.type)) {
+      if (propDef && validateCellValue(val, propDef.type, propDef.options)) {
         sanitizedCells[propId] = val;
       }
     }
@@ -636,7 +714,7 @@ export function updateCell(
   if (!row) return db;
   const propDef = db.properties[propertyId];
   if (!propDef) return db; // 属性不存在则忽略
-  if (!validateCellValue(value, propDef.type)) return db; // 值形态非法则忽略
+  if (!validateCellValue(value, propDef.type, propDef.options)) return db; // 值形态非法或悬空 option 则忽略
 
   const now = Date.now();
   const nextCells = { ...row.cells, [propertyId]: value };
@@ -721,7 +799,19 @@ export function migrateCellForTypeChange(
 
   if (oldType === newType) {
     if (newType === 'checkbox') return Boolean(val);
-    if (newType === 'multiSelect') return Array.isArray(val) ? val : [String(val)];
+    if (newType === 'multiSelect') {
+      const arr = Array.isArray(val) ? val : [String(val)];
+      const filtered = options
+        ? arr.filter((id) => options.some((o) => o.id === id))
+        : arr;
+      return Array.from(new Set(filtered));
+    }
+    if (newType === 'select') {
+      if (options && !options.some((o) => o.id === val)) {
+        return null;
+      }
+      return val;
+    }
     return val;
   }
 
@@ -760,27 +850,53 @@ export function migrateCellForTypeChange(
     }
 
     case 'select': {
+      if (!options || options.length === 0) return null;
       if (oldType === 'multiSelect' && Array.isArray(val)) {
-        return val.length > 0 ? val[0] : null;
+        for (const item of val) {
+          const str = String(item).trim();
+          const matchedById = options.find((o) => o.id === str);
+          if (matchedById) return matchedById.id;
+          const matchesByName = options.filter((o) => o.name === str);
+          if (matchesByName.length === 1) return matchesByName[0].id;
+        }
+        return null;
       }
       const str = String(val).trim();
       if (!str) return null;
-      const matched = options?.find((o) => o.id === str || o.name === str);
-      return matched ? matched.id : str;
+      const matchedById = options.find((o) => o.id === str);
+      if (matchedById) return matchedById.id;
+      const matchesByName = options.filter((o) => o.name === str);
+      if (matchesByName.length === 1) return matchesByName[0].id;
+      return null;
     }
 
     case 'multiSelect': {
+      if (!options || options.length === 0) return [];
       if (oldType === 'select') {
         const str = String(val).trim();
         if (!str) return [];
-        const matched = options?.find((o) => o.id === str || o.name === str);
-        return [matched ? matched.id : str];
+        const matchedById = options.find((o) => o.id === str);
+        if (matchedById) return [matchedById.id];
+        const matchesByName = options.filter((o) => o.name === str);
+        if (matchesByName.length === 1) return [matchesByName[0].id];
+        return [];
       }
-      if (Array.isArray(val)) {
-        return val.map(String).filter(Boolean);
+      const arr = Array.isArray(val) ? val : [val];
+      const matchedIds: string[] = [];
+      for (const item of arr) {
+        const str = String(item).trim();
+        if (!str) continue;
+        const matchedById = options.find((o) => o.id === str);
+        if (matchedById) {
+          matchedIds.push(matchedById.id);
+        } else {
+          const matchesByName = options.filter((o) => o.name === str);
+          if (matchesByName.length === 1) {
+            matchedIds.push(matchesByName[0].id);
+          }
+        }
       }
-      const str = String(val).trim();
-      return str ? [str] : [];
+      return Array.from(new Set(matchedIds));
     }
 
     case 'date':
@@ -789,6 +905,37 @@ export function migrateCellForTypeChange(
     default:
       return String(val);
   }
+}
+
+/**
+ * 预检查列类型切换可能导致的不可逆数据丢失行数
+ */
+export function getIncompatibleCellCount(
+  db: DatabaseSchema,
+  propertyId: string,
+  newType: PropertyType
+): number {
+  const prop = db.properties[propertyId];
+  if (!prop || prop.type === newType) return 0;
+  let count = 0;
+  const targetOptions =
+    newType === 'select' || newType === 'multiSelect' ? prop.options || [] : undefined;
+  for (const row of Object.values(db.rows)) {
+    const val = row.cells[propertyId];
+    if (val === null || val === undefined || val === '') continue;
+    if (Array.isArray(val) && val.length === 0) continue;
+
+    const migrated = migrateCellForTypeChange(val, prop.type, newType, targetOptions);
+    if (
+      migrated === null ||
+      migrated === undefined ||
+      migrated === '' ||
+      (Array.isArray(migrated) && migrated.length === 0)
+    ) {
+      count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -816,6 +963,9 @@ export function changePropertyType(
       ? { options: existing.options || [] }
       : {}),
   };
+  if (newType !== 'select' && newType !== 'multiSelect') {
+    delete updatedProp.options;
+  }
 
   const nextRows: Record<string, DatabaseRow> = {};
   for (const [rowId, row] of Object.entries(db.rows)) {

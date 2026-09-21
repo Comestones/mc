@@ -2955,7 +2955,7 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[checkPropId]).toBe(true);
   });
 
-  it('68. [Day 10] Number 单元格：双击进入编辑、输入合法数字与非法过滤、右对齐显示、Enter 提交', () => {
+  it('68. [Day 10] Number 单元格：双击编辑、合法数字提交、空值清空提交、非法中间态拦截（保持编辑态/错误提示/拒绝静默清空）与 Escape 回滚', () => {
     const dbId = useWorkspaceStore.getState().createDatabase('数字列测试表');
     const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
     useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '金额', type: 'number' });
@@ -2981,23 +2981,66 @@ describe('BlockEditor Component & Store Integration', () => {
     const cell01 = screen.getByTestId('db-cell-0-1');
     expect(cell01).toHaveTextContent('120.5');
 
-    // 1. 双击进入编辑态
+    // 1. 双击进入编辑态，输入合法数字 350 并按 Enter 提交
     act(() => {
       fireEvent.doubleClick(cell01);
     });
-    const numInput = screen.getByTestId('db-number-cell-input') as HTMLInputElement;
+    let numInput = screen.getByTestId('db-number-cell-input') as HTMLInputElement;
     expect(numInput).toBeInTheDocument();
     expect(numInput.value).toBe('120.5');
 
-    // 2. 输入合法数字 350 并按 Enter 提交
     act(() => {
       fireEvent.change(numInput, { target: { value: '350' } });
       fireEvent.keyDown(numInput, { key: 'Enter' });
     });
-
-    // 验证 Store 中已转换为 number 类型
     expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBe(350);
     expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('350');
+
+    // 2. 再次编辑，输入非法中间态 "-" 并按 Enter 尝试提交
+    act(() => {
+      fireEvent.doubleClick(screen.getByTestId('db-cell-0-1'));
+    });
+    numInput = screen.getByTestId('db-number-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(numInput, { target: { value: '-' } });
+      fireEvent.keyDown(numInput, { key: 'Enter' });
+    });
+
+    // 严禁静默折叠提交为 null：保持编辑态，呈现可访问错误状态与提示
+    expect(screen.getByTestId('db-number-cell-input')).toBeInTheDocument();
+    expect(numInput).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByTestId('db-number-cell-error')).toHaveTextContent('请输入有效数字');
+    // Store 中的数值保持不变
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBe(350);
+
+    // 3. 按 Escape 回滚放弃本次非法修改
+    act(() => {
+      fireEvent.keyDown(numInput, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('db-number-cell-input')).not.toBeInTheDocument();
+    expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('350');
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBe(350);
+
+    // 4. 编辑态下输入非法中间态 "." 并触发 blur，同样拦截
+    act(() => {
+      fireEvent.doubleClick(screen.getByTestId('db-cell-0-1'));
+    });
+    numInput = screen.getByTestId('db-number-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(numInput, { target: { value: '.' } });
+      fireEvent.blur(numInput);
+    });
+    expect(numInput).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByTestId('db-number-cell-error')).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBe(350);
+
+    // 5. 将草稿合法清空并 Enter 提交：安全将数字单元格置为空 (null)
+    act(() => {
+      fireEvent.change(numInput, { target: { value: '' } });
+      fireEvent.keyDown(numInput, { key: 'Enter' });
+    });
+    expect(screen.queryByTestId('db-number-cell-input')).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[numPropId]).toBeNull();
   });
 
   it('69. [Day 10] Select 单元格：打开 Popover、搜索过滤、选中选项更新 Tag 徽章与色彩、支持创建新选项并持久化稳定 ID', async () => {
@@ -3232,7 +3275,7 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(useWorkspaceStore.getState().databases[dbId].properties[thirdPropId]).toBeUndefined();
   });
 
-  it('72. [Day 10] UI 编辑基础字段后防抖自动保存、重建 Store 并执行 hydrateStore 刷新恢复端到端测试', async () => {
+  it('72. [Day 10] UI 全量编辑 5 大基础字段（Text、Number、Checkbox、Select、MultiSelect）与选项配置后防抖持久化、重建 Store 并执行 hydrateStore 端到端恢复', async () => {
     const persistentStorage = new MemoryStorage(null, { isPersistent: true });
     useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
 
@@ -3240,24 +3283,37 @@ describe('BlockEditor Component & Store Integration', () => {
       await useWorkspaceStore.getState().hydrateStore();
     });
 
-    const dbId = useWorkspaceStore.getState().createDatabase('Day10持久化全类型测试表');
+    const dbId = useWorkspaceStore.getState().createDatabase('Day10持久化全字段测试表');
     const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
     useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '评分', type: 'number' });
     const numPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
     useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '已核验', type: 'checkbox' });
     const checkPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[2];
     useWorkspaceStore.getState().addDatabaseProperty(dbId, {
-      name: '标签',
+      name: '版本状态',
       type: 'select',
-      options: [{ id: 'opt-v1', name: '正式版', color: '#10b981' }],
+      options: [
+        { id: 'opt-v1', name: '正式版', color: '#10b981' },
+        { id: 'opt-v2', name: '测试版', color: '#3b82f6' },
+      ],
     });
     const selPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[3];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '团队标签',
+      type: 'multiSelect',
+      options: [
+        { id: 'opt-tag1', name: '前端组', color: '#8b5cf6' },
+        { id: 'opt-tag2', name: '后端组', color: '#f59e0b' },
+      ],
+    });
+    const multiPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[4];
 
     useWorkspaceStore.getState().addDatabaseRow(dbId, {
       [titlePropId]: '模块 1',
       [numPropId]: 10,
       [checkPropId]: false,
       [selPropId]: 'opt-v1',
+      [multiPropId]: ['opt-tag1'],
     });
 
     const docId = 'doc-db-day10-persist-full';
@@ -3283,13 +3339,59 @@ describe('BlockEditor Component & Store Integration', () => {
       fireEvent.keyDown(numInput, { key: 'Enter' });
     });
 
-    // 2. UI 点击 Checkbox 单元格
+    // 2. UI 点击 Checkbox 单元格切换
     const chkCell = screen.getByTestId('db-cell-0-2');
     act(() => {
       fireEvent.click(chkCell);
     });
 
-    // 3. 等待 550ms 防抖持久化
+    // 3. UI 双击 Select 单元格，打开 Popover 并切换到 'opt-v2' (测试版)
+    const selCell = screen.getByTestId('db-cell-0-3');
+    act(() => {
+      fireEvent.doubleClick(selCell);
+    });
+    expect(screen.getByTestId('select-cell-popover')).toBeInTheDocument();
+    act(() => {
+      fireEvent.click(screen.getByTestId('select-option-opt-v2'));
+    });
+    expect(selCell).toHaveTextContent('测试版');
+
+    // 4. UI 双击 MultiSelect 单元格，打开 Popover 勾选 'opt-tag2' (后端组)
+    const multiCell = screen.getByTestId('db-cell-0-4');
+    act(() => {
+      fireEvent.doubleClick(multiCell);
+    });
+    expect(screen.getByTestId('multi-select-cell-popover')).toBeInTheDocument();
+    act(() => {
+      fireEvent.click(screen.getByTestId('multi-select-option-opt-tag2'));
+    });
+    act(() => {
+      fireEvent.keyDown(screen.getByTestId('multi-select-search-input'), { key: 'Tab' });
+    });
+    expect(multiCell).toHaveTextContent('前端组');
+    expect(multiCell).toHaveTextContent('后端组');
+
+    // 5. UI 打开列配置，重命名 select 选项名称并添加新选项
+    const selTrigger = screen.getByTestId(`db-header-trigger-${selPropId}`);
+    act(() => {
+      fireEvent.click(selTrigger);
+    });
+    expect(screen.getByTestId('column-config-popover')).toBeInTheDocument();
+    const optInput = screen.getByTestId('option-name-input-opt-v1') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(optInput, { target: { value: '正式稳定版' } });
+      fireEvent.blur(optInput);
+    });
+    const newOptInput = screen.getByTestId('new-option-input');
+    act(() => {
+      fireEvent.change(newOptInput, { target: { value: '预发布版' } });
+      fireEvent.click(screen.getByTestId('add-option-btn'));
+    });
+    act(() => {
+      fireEvent.click(screen.getByTestId('column-config-close'));
+    });
+
+    // 6. 等待 550ms 防抖自动持久化
     await act(async () => {
       vi.advanceTimersByTime(550);
       await Promise.resolve();
@@ -3301,10 +3403,16 @@ describe('BlockEditor Component & Store Integration', () => {
     const rowId = persistedDb?.rowOrder[0]!;
     expect(persistedDb?.rows[rowId]?.cells[numPropId]).toBe(99);
     expect(persistedDb?.rows[rowId]?.cells[checkPropId]).toBe(true);
+    expect(persistedDb?.rows[rowId]?.cells[selPropId]).toBe('opt-v2');
+    expect(persistedDb?.rows[rowId]?.cells[multiPropId]).toEqual(['opt-tag1', 'opt-tag2']);
+    // 验证 options 配置也被完整持久化
+    const savedSelProp = persistedDb?.properties[selPropId];
+    expect(savedSelProp?.options?.find((o) => o.id === 'opt-v1')?.name).toBe('正式稳定版');
+    expect(savedSelProp?.options?.some((o) => o.name === '预发布版')).toBe(true);
 
     unmount();
 
-    // 4. 重建 Store 并恢复
+    // 7. 重建 Store 并执行 hydrateStore 恢复
     useWorkspaceStore.setState({
       databases: {},
       isHydrated: false,
@@ -3319,12 +3427,159 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(restoredDb).toBeDefined();
     expect(restoredDb?.rows[rowId]?.cells[numPropId]).toBe(99);
     expect(restoredDb?.rows[rowId]?.cells[checkPropId]).toBe(true);
-    expect(restoredDb?.rows[rowId]?.cells[selPropId]).toBe('opt-v1');
+    expect(restoredDb?.rows[rowId]?.cells[selPropId]).toBe('opt-v2');
+    expect(restoredDb?.rows[rowId]?.cells[multiPropId]).toEqual(['opt-tag1', 'opt-tag2']);
 
-    // 5. 重新挂载组件验证渲染
+    // 8. 重新挂载组件验证全量渲染无误
     render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
     expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('99');
-    expect(screen.getByTestId('db-cell-0-3')).toHaveTextContent('正式版');
+    expect(screen.getByTestId('db-cell-0-3')).toHaveTextContent('测试版');
+    expect(screen.getByTestId('db-cell-0-4')).toHaveTextContent('前端组');
+    expect(screen.getByTestId('db-cell-0-4')).toHaveTextContent('后端组');
+  });
+
+  it('73. [Day 10] ColumnConfigPopover 破坏性类型切换拦截确认：检测到不可逆数据清空时弹出确认、支持取消回滚与确认清空转换，及键盘焦点无障碍', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('类型切换确认测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '数据备注', type: 'text' });
+    const dataPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '记录 1',
+      [dataPropId]: '无法转换为数字的文本',
+    });
+
+    const docId = 'doc-db-day10-confirm-type';
+    registerTestDoc(docId, [
+      {
+        id: 'b-confirm-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const trigger = screen.getByTestId(`db-header-trigger-${dataPropId}`);
+
+    // 1. 验证表头触发器具有 button 与 dialog 语义
+    expect(trigger).toHaveAttribute('role', 'button');
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(trigger).toHaveAttribute('tabIndex', '0');
+
+    // 2. 通过键盘 Enter 键打开列配置弹层
+    act(() => {
+      fireEvent.keyDown(trigger, { key: 'Enter' });
+    });
+    const popover = screen.getByTestId('column-config-popover');
+    expect(popover).toBeInTheDocument();
+    expect(popover).toHaveAttribute('role', 'dialog');
+    expect(popover).toHaveAttribute('aria-label', '编辑列');
+
+    // 3. 将 text 切换为 number（因含有非数字文本，将导致 1 行数据清空）
+    const typeSelect = screen.getByTestId('column-type-select');
+    act(() => {
+      fireEvent.change(typeSelect, { target: { value: 'number' } });
+    });
+
+    // 验证出现拦截确认对话框，且 Store 中类型尚未更改
+    const confirmDialog = screen.getByTestId('type-change-confirm-dialog');
+    expect(confirmDialog).toBeInTheDocument();
+    expect(confirmDialog).toHaveAttribute('role', 'alertdialog');
+    expect(confirmDialog).toHaveTextContent('1');
+    expect(useWorkspaceStore.getState().databases[dbId].properties[dataPropId].type).toBe('text');
+
+    // 4. 点击“取消”按钮，确认框关闭，类型选择回滚为 text
+    act(() => {
+      fireEvent.click(screen.getByTestId('cancel-type-change-btn'));
+    });
+    expect(screen.queryByTestId('type-change-confirm-dialog')).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().databases[dbId].properties[dataPropId].type).toBe('text');
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[dataPropId]).toBe('无法转换为数字的文本');
+
+    // 5. 再次触发切换为 number，并点击“确认清空并转换”
+    act(() => {
+      fireEvent.change(typeSelect, { target: { value: 'number' } });
+    });
+    expect(screen.getByTestId('type-change-confirm-dialog')).toBeInTheDocument();
+    act(() => {
+      fireEvent.click(screen.getByTestId('confirm-type-change-btn'));
+    });
+
+    // 确认后类型成功切换为 number，且无法转换的单元格已安全置为空并被清除
+    expect(screen.queryByTestId('type-change-confirm-dialog')).not.toBeInTheDocument();
+    expect(useWorkspaceStore.getState().databases[dbId].properties[dataPropId].type).toBe('number');
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[dataPropId]).toBeUndefined();
+
+    // 6. 按 Escape 键关闭列配置弹层
+    act(() => {
+      fireEvent.keyDown(popover, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('column-config-popover')).not.toBeInTheDocument();
+  });
+
+  it('74. [Day 10] Select / MultiSelect 单元格：Combobox 与 Listbox 无障碍属性规范断言（role、aria-expanded、aria-controls、aria-activedescendant）', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('无障碍测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '单选状态',
+      type: 'select',
+      options: [{ id: 'opt-s1', name: '状态1', color: '#3b82f6' }],
+    });
+    const selPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, {
+      name: '多选标签',
+      type: 'multiSelect',
+      options: [{ id: 'opt-m1', name: '标签1', color: '#10b981' }],
+    });
+    const multiPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[2];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '项目 X',
+      [selPropId]: 'opt-s1',
+      [multiPropId]: ['opt-m1'],
+    });
+
+    const docId = 'doc-db-day10-a11y';
+    registerTestDoc(docId, [
+      {
+        id: 'b-a11y-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 打开 Select 编辑器并断言 combobox/listbox 语义
+    const selCell = screen.getByTestId('db-cell-0-1');
+    act(() => {
+      fireEvent.doubleClick(selCell);
+    });
+    const selInput = screen.getByTestId('select-search-input');
+    expect(selInput).toHaveAttribute('role', 'combobox');
+    expect(selInput).toHaveAttribute('aria-expanded', 'true');
+    expect(selInput).toHaveAttribute('aria-controls', 'select-options-listbox');
+    expect(screen.getByTestId('select-options-list')).toHaveAttribute('role', 'listbox');
+    expect(screen.getByTestId('select-options-list')).toHaveAttribute('aria-label', '选择选项');
+
+    act(() => {
+      fireEvent.keyDown(selInput, { key: 'Escape' });
+    });
+
+    // 2. 打开 MultiSelect 编辑器并断言 combobox/listbox 语义
+    const multiCell = screen.getByTestId('db-cell-0-2');
+    act(() => {
+      fireEvent.doubleClick(multiCell);
+    });
+    const multiInput = screen.getByTestId('multi-select-search-input');
+    expect(multiInput).toHaveAttribute('role', 'combobox');
+    expect(multiInput).toHaveAttribute('aria-expanded', 'true');
+    expect(multiInput).toHaveAttribute('aria-controls', 'multi-select-options-listbox');
+    expect(screen.getByTestId('multi-select-options-list')).toHaveAttribute('role', 'listbox');
+    expect(screen.getByTestId('multi-select-options-list')).toHaveAttribute('aria-label', '多选标签');
   });
 });
 

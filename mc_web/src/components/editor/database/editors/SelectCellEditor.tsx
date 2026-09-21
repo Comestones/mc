@@ -125,6 +125,15 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
+          aria-expanded={true}
+          aria-autocomplete="list"
+          aria-controls="select-options-listbox"
+          aria-activedescendant={
+            items[highlightIndex]
+              ? `select-opt-${items[highlightIndex].type === 'option' ? (items[highlightIndex] as any).option.id : items[highlightIndex].type}`
+              : undefined
+          }
           data-testid="select-search-input"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -135,7 +144,9 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
       </div>
 
       <div
+        id="select-options-listbox"
         role="listbox"
+        aria-label="选择选项"
         data-testid="select-options-list"
         className="max-h-48 overflow-y-auto p-1 space-y-0.5"
       >
@@ -151,6 +162,7 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
               return (
                 <div
                   key="clear-option"
+                  id="select-opt-clear"
                   role="option"
                   aria-selected={false}
                   data-testid="select-option-clear"
@@ -169,6 +181,7 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
               return (
                 <div
                   key="create-option"
+                  id="select-opt-create"
                   role="option"
                   aria-selected={false}
                   data-testid="select-option-create"
@@ -190,6 +203,7 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
             return (
               <div
                 key={opt.id}
+                id={`select-opt-${opt.id}`}
                 role="option"
                 aria-selected={isSelected}
                 data-testid={`select-option-${opt.id}`}

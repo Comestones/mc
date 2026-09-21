@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { DatabaseProperty, PropertyType, SelectOption, PRESET_OPTION_COLORS } from '../../../types/database';
+import { getIncompatibleCellCount } from '../../../utils/databaseUtils';
 import { PROPERTY_TYPE_LABELS } from './TableHeader';
 import { Trash2, Plus, X } from 'lucide-react';
 
@@ -25,9 +26,8 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
   propertyId,
   onClose,
 }) => {
-  const property = useWorkspaceStore(
-    (state) => state.databases[databaseId]?.properties[propertyId]
-  ) as DatabaseProperty | undefined;
+  const database = useWorkspaceStore((state) => state.databases[databaseId]);
+  const property = database?.properties[propertyId] as DatabaseProperty | undefined;
 
   const updateDatabaseProperty = useWorkspaceStore((state) => state.updateDatabaseProperty);
   const changeDatabasePropertyType = useWorkspaceStore((state) => state.changeDatabasePropertyType);
@@ -38,6 +38,10 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
 
   const [name, setName] = useState(property?.name || '');
   const [newOptionName, setNewOptionName] = useState('');
+  const [pendingTypeChange, setPendingTypeChange] = useState<{
+    newType: PropertyType;
+    affectedCount: number;
+  } | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isTitle = property?.type === 'title';
@@ -78,7 +82,28 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value as PropertyType;
     if (isTitle || newType === property.type) return;
+
+    if (database) {
+      const affectedCount = getIncompatibleCellCount(database, propertyId, newType);
+      if (affectedCount > 0) {
+        setPendingTypeChange({ newType, affectedCount });
+        return;
+      }
+    }
+
+    setPendingTypeChange(null);
     changeDatabasePropertyType(databaseId, propertyId, newType);
+  };
+
+  const handleConfirmTypeChange = () => {
+    if (pendingTypeChange) {
+      changeDatabasePropertyType(databaseId, propertyId, pendingTypeChange.newType);
+      setPendingTypeChange(null);
+    }
+  };
+
+  const handleCancelTypeChange = () => {
+    setPendingTypeChange(null);
   };
 
   const handleDeleteColumn = () => {
@@ -99,9 +124,18 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
   return (
     <div
       ref={popoverRef}
+      role="dialog"
+      aria-label="编辑列"
+      aria-modal="false"
       data-testid="column-config-popover"
       className="absolute top-full left-0 z-50 mt-1 w-64 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-[#252528] shadow-xl p-3 text-xs text-text-primary-light dark:text-text-primary-dark select-none space-y-3"
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onClose();
+        }
+      }}
     >
       {/* 头部关闭 */}
       <div className="flex items-center justify-between pb-2 border-b border-border-light/60 dark:border-border-dark/60">
@@ -147,7 +181,7 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
         ) : (
           <select
             data-testid="column-type-select"
-            value={property.type}
+            value={pendingTypeChange ? pendingTypeChange.newType : property.type}
             onChange={handleTypeChange}
             className="w-full px-2 py-1 text-xs bg-neutral-50 dark:bg-neutral-800/60 border border-border-light dark:border-border-dark rounded outline-none focus:border-blue-500 cursor-pointer"
           >
@@ -157,6 +191,43 @@ export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({
               </option>
             ))}
           </select>
+        )}
+
+        {/* 破坏性切换确认对话框 */}
+        {pendingTypeChange && (
+          <div
+            data-testid="type-change-confirm-dialog"
+            role="alertdialog"
+            aria-labelledby="type-change-title"
+            aria-describedby="type-change-desc"
+            className="mt-2 p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded text-xs space-y-2"
+          >
+            <div id="type-change-title" className="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-1">
+              <span>⚠️ 转换可能导致数据丢失</span>
+            </div>
+            <div id="type-change-desc" className="text-amber-700 dark:text-amber-300 text-[11px] leading-relaxed">
+              切换至 <strong>{PROPERTY_TYPE_LABELS[pendingTypeChange.newType]}</strong> 将导致{' '}
+              <strong>{pendingTypeChange.affectedCount}</strong> 行无法转换的数据被清空。是否继续？
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                data-testid="cancel-type-change-btn"
+                onClick={handleCancelTypeChange}
+                className="px-2 py-1 bg-white dark:bg-neutral-800 border border-border-light dark:border-border-dark rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-text-primary-light dark:text-text-primary-dark font-medium text-[11px]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-type-change-btn"
+                onClick={handleConfirmTypeChange}
+                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-[11px]"
+              >
+                确认清空并转换
+              </button>
+            </div>
+          </div>
         )}
       </div>
 

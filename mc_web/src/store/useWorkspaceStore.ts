@@ -800,13 +800,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         const snapshot = await storageInstance.load();
         if (snapshot) {
           const isPersistent = storageInstance.isPersistent;
+          const rawDatabases = snapshot.databases || {};
+          const safeDatabases: Record<string, DatabaseSchema> = {};
+          for (const [dbId, db] of Object.entries(rawDatabases)) {
+            safeDatabases[dbId] = validateDatabaseSchema(db) ? db : normalizeDatabaseSchema(db);
+          }
+
           set({
             workspace: snapshot.workspace,
             documents: snapshot.documents,
             activePageId: snapshot.activePageId,
             isSidebarCollapsed: snapshot.isSidebarCollapsed,
             theme: snapshot.theme,
-            databases: snapshot.databases || {},
+            databases: safeDatabases,
             isHydrated: true,
             storageStatus: isPersistent ? 'saved' : 'degraded',
             storageError: isPersistent ? null : '当前处于纯内存降级模式，数据未持久化到本地',

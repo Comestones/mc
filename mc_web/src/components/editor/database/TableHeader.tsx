@@ -227,9 +227,20 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
               className="group relative px-3 py-2 text-left font-medium text-text-secondary-light dark:text-text-secondary-dark text-xs border-r border-border-light/60 dark:border-border-dark/60 select-none transition-[width] duration-75"
             >
               <div
+                role="button"
+                tabIndex={0}
+                aria-haspopup="dialog"
+                aria-expanded={configPropId === propId}
+                aria-label={`配置列 ${prop.name}`}
                 data-testid={`db-header-trigger-${propId}`}
                 onClick={() => setConfigPropId(configPropId === propId ? null : propId)}
-                className="flex items-center gap-1.5 pr-2 cursor-pointer hover:text-text-primary-light dark:hover:text-text-primary-dark"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setConfigPropId(configPropId === propId ? null : propId);
+                  }
+                }}
+                className="flex items-center gap-1.5 pr-2 cursor-pointer hover:text-text-primary-light dark:hover:text-text-primary-dark outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
               >
                 <IconComponent className="w-3.5 h-3.5 text-text-muted-light dark:text-text-muted-dark flex-shrink-0" />
                 <span className="truncate font-medium">{prop.name}</span>
@@ -255,7 +266,13 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
                 <ColumnConfigPopover
                   databaseId={databaseId}
                   propertyId={propId}
-                  onClose={() => setConfigPropId(null)}
+                  onClose={() => {
+                    setConfigPropId(null);
+                    const trigger = document.querySelector(
+                      `[data-testid="db-header-trigger-${propId}"]`
+                    ) as HTMLElement | null;
+                    trigger?.focus();
+                  }}
                 />
               )}
 
