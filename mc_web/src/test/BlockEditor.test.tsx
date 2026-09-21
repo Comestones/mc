@@ -2217,7 +2217,11 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(db.properties[db.propertyOrder[0]].type).toBe('title');
 
     // 添加属性列
-    db = addProperty(db, { name: '标签', type: 'select' });
+    db = addProperty(db, {
+      name: '标签',
+      type: 'select',
+      options: [{ id: 'opt-1', name: '选项1', color: 'blue' }],
+    });
     const tagColId = db.propertyOrder[1];
     expect(db.properties[tagColId].name).toBe('标签');
 
@@ -3580,6 +3584,375 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(multiInput).toHaveAttribute('aria-controls', 'multi-select-options-listbox');
     expect(screen.getByTestId('multi-select-options-list')).toHaveAttribute('role', 'listbox');
     expect(screen.getByTestId('multi-select-options-list')).toHaveAttribute('aria-label', '多选标签');
+  });
+
+  it('75. [Day 11] Date 单元格编辑闭环：双击进入、合法 YYYY-MM-DD 提交、虚构日期拦截与 aria-invalid 提示、Escape 回滚与清空', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('日期字段测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '上线日期', type: 'date' });
+    const datePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '项目 Alpha',
+      [datePropId]: '2026-09-21',
+    });
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+
+    const docId = 'doc-db-day11-date';
+    registerTestDoc(docId, [
+      {
+        id: 'b-date-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 初始渲染验证：单元格显示 "2026-09-21"
+    const dateCell = screen.getByTestId('db-cell-0-1');
+    expect(dateCell).toHaveTextContent('2026-09-21');
+
+    // 2. 双击进入编辑态
+    act(() => {
+      fireEvent.doubleClick(dateCell);
+    });
+    const dateInput = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    expect(dateInput).toBeInTheDocument();
+    expect(dateInput.type).toBe('text');
+    expect(dateInput.value).toBe('2026-09-21');
+
+    // 3. 修改为合法新日期并按 Enter 提交
+    act(() => {
+      fireEvent.change(dateInput, { target: { value: '2026-10-01' } });
+      fireEvent.keyDown(dateInput, { key: 'Enter' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[datePropId]).toBe('2026-10-01');
+
+    // 4. 再次双击进入编辑态，输入虚构日期 "2026-02-30" 触发错误拦截
+    act(() => {
+      fireEvent.doubleClick(screen.getByTestId('db-cell-0-1'));
+    });
+    const dateInput2 = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(dateInput2, { target: { value: '2026-02-30' } });
+      fireEvent.keyDown(dateInput2, { key: 'Enter' });
+    });
+    expect(screen.getByTestId('db-date-cell-error')).toBeInTheDocument();
+    expect(dateInput2).toHaveAttribute('aria-invalid', 'true');
+    // Store 中的值保持原有效值，不受非法输入污染
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[datePropId]).toBe('2026-10-01');
+
+    // 5. 按 Escape 键取消编辑并回滚
+    act(() => {
+      fireEvent.keyDown(dateInput2, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('db-cell-input')).not.toBeInTheDocument();
+    expect(screen.getByTestId('db-cell-0-1')).toHaveTextContent('2026-10-01');
+
+    // 6. 再次进入编辑态，清空日期并提交
+    act(() => {
+      fireEvent.doubleClick(screen.getByTestId('db-cell-0-1'));
+    });
+    const dateInput3 = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(dateInput3, { target: { value: '' } });
+      fireEvent.keyDown(dateInput3, { key: 'Enter' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[datePropId]).toBeNull();
+  });
+
+  it('76. [Day 11] URL 单元格编辑与安全打开：自动规范化补全 https://、拦截 javascript: 恶意协议、外链安全属性', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('链接字段测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '项目主页', type: 'url' });
+    const urlPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: 'MC 知识库',
+      [urlPropId]: 'https://github.com/Comestones/mc',
+    });
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+
+    const docId = 'doc-db-day11-url';
+    registerTestDoc(docId, [
+      {
+        id: 'b-url-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 校验 URL 链接渲染与安全属性
+    const urlCell = screen.getByTestId('db-cell-0-1');
+    expect(urlCell).toHaveTextContent('https://github.com/Comestones/mc');
+    const openLink = screen.getByTestId('db-url-open-link');
+    expect(openLink).toHaveAttribute('href', 'https://github.com/Comestones/mc');
+    expect(openLink).toHaveAttribute('target', '_blank');
+    expect(openLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+    // 2. 双击进入编辑态，输入无协议域名 "antigravity.dev"，提交时自动补全
+    act(() => {
+      fireEvent.doubleClick(urlCell);
+    });
+    const urlInput = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(urlInput, { target: { value: 'antigravity.dev' } });
+      fireEvent.keyDown(urlInput, { key: 'Enter' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[urlPropId]).toBe('https://antigravity.dev/');
+
+    // 3. 再次进入编辑态，输入恶意协议 "javascript:alert(1)"，拦截错误并维持原值
+    act(() => {
+      fireEvent.doubleClick(screen.getByTestId('db-cell-0-1'));
+    });
+    const urlInput2 = screen.getByTestId('db-cell-input') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(urlInput2, { target: { value: 'javascript:alert(1)' } });
+      fireEvent.keyDown(urlInput2, { key: 'Enter' });
+    });
+    expect(screen.getByTestId('db-url-cell-error')).toBeInTheDocument();
+    expect(urlInput2).toHaveAttribute('aria-invalid', 'true');
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[urlPropId]).toBe('https://antigravity.dev/');
+
+    // 4. 按 Escape 取消
+    act(() => {
+      fireEvent.keyDown(urlInput2, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('db-cell-input')).not.toBeInTheDocument();
+  });
+
+  it('77. [Day 11] CreatedTime 派生字段：只读格式化展示、杜绝编辑态、列配置切换破坏性清理确认', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('只读时间测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '记录时间', type: 'createdTime' });
+    const createdPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+    expect(createdPropId).toBeDefined();
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '日志条目 1',
+    });
+
+    const docId = 'doc-db-day11-created-time';
+    registerTestDoc(docId, [
+      {
+        id: 'b-ct-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 验证 createdTime 只读格式化展示
+    const ctCell = screen.getByTestId('db-cell-0-1');
+    expect(ctCell).toBeInTheDocument();
+    expect(ctCell.textContent).toMatch(/202\d-\d{2}-\d{2}/);
+
+    // 2. 双击或按 Enter 不进入编辑态
+    act(() => {
+      fireEvent.doubleClick(ctCell);
+    });
+    expect(screen.queryByTestId('db-cell-input')).not.toBeInTheDocument();
+
+    act(() => {
+      fireEvent.keyDown(ctCell, { key: 'Enter' });
+    });
+    expect(screen.queryByTestId('db-cell-input')).not.toBeInTheDocument();
+  });
+
+  it('78. [Day 11] 表头新增列类型选择菜单：展开 8 种类型下拉、点击创建对应字段、键盘 Escape 与外部关闭', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('新增字段菜单表');
+    const docId = 'doc-db-day11-add-column-menu';
+    registerTestDoc(docId, [
+      {
+        id: 'b-addcol-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    expect(useWorkspaceStore.getState().databases[dbId].propertyOrder.length).toBe(1);
+
+    // 1. 点击表头下拉按钮展开类型选择菜单
+    const menuTrigger = screen.getByTestId('table-add-column-menu-trigger');
+    act(() => {
+      fireEvent.click(menuTrigger);
+    });
+
+    const menu = screen.getByTestId('add-column-type-menu');
+    expect(menu).toBeInTheDocument();
+    expect(menu).toHaveAttribute('role', 'menu');
+
+    // 8 种可用字段类型选项均渲染
+    const allTypes = ['text', 'number', 'select', 'multiSelect', 'checkbox', 'date', 'url', 'createdTime'];
+    for (const t of allTypes) {
+      expect(screen.getByTestId(`add-column-type-option-${t}`)).toBeInTheDocument();
+    }
+
+    // 2. 点击 "日期" 选项创建 date 字段
+    act(() => {
+      fireEvent.click(screen.getByTestId('add-column-type-option-date'));
+    });
+
+    expect(screen.queryByTestId('add-column-type-menu')).not.toBeInTheDocument();
+    const currentOrder = useWorkspaceStore.getState().databases[dbId].propertyOrder;
+    expect(currentOrder.length).toBe(2);
+    const newProp = useWorkspaceStore.getState().databases[dbId].properties[currentOrder[1]];
+    expect(newProp.type).toBe('date');
+
+    // 3. 再次展开，按 Escape 键安全关闭
+    act(() => {
+      fireEvent.click(screen.getByTestId('table-add-column-menu-trigger'));
+    });
+    expect(screen.getByTestId('add-column-type-menu')).toBeInTheDocument();
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('add-column-type-menu')).not.toBeInTheDocument();
+  });
+
+  it('79. [Day 11] Row as Page：打开详情弹窗、焦点捕获与 Escape 退出、焦点精确归还与主标题/属性实时双向同步', () => {
+    const dbId = useWorkspaceStore.getState().createDatabase('RowAsPage测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '计划日期', type: 'date' });
+    const datePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '功能演练行',
+      [datePropId]: '2026-09-25',
+    });
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+
+    const docId = 'doc-db-day11-row-detail';
+    registerTestDoc(docId, [
+      {
+        id: 'b-rap-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 点击行标题单元格中的 "打开" 按钮
+    const openBtn = screen.getByTestId(`row-open-detail-${rowId}`);
+    expect(openBtn).toBeInTheDocument();
+    act(() => {
+      fireEvent.click(openBtn);
+    });
+
+    // 2. 详情弹窗挂载，role="dialog"，并且标题输入框自动获得焦点
+    const dialog = screen.getByTestId('database-row-detail-dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('role', 'dialog');
+    const titleInput = screen.getByTestId('row-detail-title-input');
+    expect(titleInput).toHaveValue('功能演练行');
+
+    // 3. 在详情弹窗中修改标题，表格单元格与 Store 实时双向同步
+    act(() => {
+      fireEvent.change(titleInput, { target: { value: '功能演练行 (已更名)' } });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[titlePropId]).toBe('功能演练行 (已更名)');
+
+    // 4. 按 Escape 键安全关闭弹窗
+    act(() => {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
+    // 表格中的标题显示已更名后的最新文本
+    expect(screen.getByTestId('db-cell-0-0')).toHaveTextContent('功能演练行 (已更名)');
+  });
+
+  it('80. [Day 11] Row as Page：正文内嵌 BlockEditor 富文本编辑、500ms 防抖持久化与端到端 hydrateStore 水合恢复', async () => {
+    const persistentStorage = new MemoryStorage(null, { isPersistent: true });
+    useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    const dbId = useWorkspaceStore.getState().createDatabase('Day11正文水合测试表');
+    const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
+    useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '文档链接', type: 'url' });
+    const urlPropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
+
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '系统架构设计',
+      [urlPropId]: 'https://architecture.example.com',
+    });
+    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+
+    const docId = 'doc-db-day11-hydrate-blocks';
+    registerTestDoc(docId, [
+      {
+        id: 'b-hyd-db',
+        type: 'database',
+        content: '',
+        properties: { databaseId: dbId },
+      },
+    ]);
+
+    render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
+
+    // 1. 打开行详情弹窗
+    const openBtn = screen.getByTestId(`row-open-detail-${rowId}`);
+    act(() => {
+      fireEvent.click(openBtn);
+    });
+
+    // 2. 验证行详情内嵌 BlockEditor 渲染
+    const blocksEditor = screen.getByTestId('row-detail-blocks-editor');
+    expect(blocksEditor).toBeInTheDocument();
+
+    // 3. 在行正文块树中写入内容
+    act(() => {
+      useWorkspaceStore.getState().updateDatabaseRowBlocks(dbId, rowId, [
+        { id: 'b-detail-1', type: 'heading1', content: '系统微内核架构' },
+        { id: 'b-detail-2', type: 'todo', content: '落地完成', properties: { checked: true } },
+      ]);
+    });
+
+    // 4. 等待 550ms 防抖自动保存持久化
+    await act(async () => {
+      vi.advanceTimersByTime(550);
+      await Promise.resolve();
+    });
+
+    // 5. 重建 Store 并执行 hydrateStore 恢复快照
+    act(() => {
+      useWorkspaceStore.setState({
+        workspace: { id: 'ws-empty', name: '空', icon: '📝', description: '', memberCount: 1 },
+        documents: {},
+        databases: {},
+        activePageId: undefined,
+      });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId]).toBeUndefined();
+
+    await act(async () => {
+      await useWorkspaceStore.getState().hydrateStore();
+    });
+
+    // 6. 验证持久化快照完整恢复：标题、扩展属性 URL 及正文 blocks
+    const restoredDb = useWorkspaceStore.getState().databases[dbId];
+    expect(restoredDb).toBeDefined();
+    const restoredRow = restoredDb.rows[rowId];
+    expect(restoredRow.cells[titlePropId]).toBe('系统架构设计');
+    expect(restoredRow.cells[urlPropId]).toBe('https://architecture.example.com');
+    expect(restoredRow.blocks).toBeDefined();
+    expect(restoredRow.blocks?.length).toBe(2);
+    expect(restoredRow.blocks?.[0].content).toBe('系统微内核架构');
+    expect(restoredRow.blocks?.[1].properties?.checked).toBe(true);
   });
 });
 

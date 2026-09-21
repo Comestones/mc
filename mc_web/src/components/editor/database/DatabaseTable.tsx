@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { TableHeader, DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH } from './TableHeader';
 import { TableRow } from './TableRow';
+import { DatabaseRowDetail } from './DatabaseRowDetail';
 import { Plus } from 'lucide-react';
 
 const EMPTY_ARRAY: string[] = [];
@@ -22,6 +23,8 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
     (state) => state.databases[databaseId]?.properties || EMPTY_OBJ
   );
   const addDatabaseRow = useWorkspaceStore((state) => state.addDatabaseRow);
+
+  const [activeDetailRowId, setActiveDetailRowId] = useState<string | null>(null);
 
   const [focusedCell, setFocusedCell] = useState<{
     rowIndex: number;
@@ -201,6 +204,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
                 onStartEdit={handleStartEdit}
                 onStopEdit={handleStopEdit}
                 onNavigate={handleNavigate}
+                onOpenRowDetail={(rid) => setActiveDetailRowId(rid)}
               />
             ))
           )}
@@ -220,6 +224,24 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
             <span>添加行</span>
           </button>
         </div>
+      )}
+
+      {/* 行详情弹窗 (Row as Page) */}
+      {activeDetailRowId && (
+        <DatabaseRowDetail
+          databaseId={databaseId}
+          rowId={activeDetailRowId}
+          onClose={() => {
+            const lastRowId = activeDetailRowId;
+            setActiveDetailRowId(null);
+            setTimeout(() => {
+              const trigger = document.querySelector(
+                `[data-testid="row-open-detail-${lastRowId}"]`
+              ) as HTMLElement | null;
+              trigger?.focus();
+            }, 0);
+          }}
+        />
       )}
     </div>
   );

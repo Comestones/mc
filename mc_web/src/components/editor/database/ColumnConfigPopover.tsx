@@ -19,6 +19,7 @@ const ALLOWED_TYPES: PropertyType[] = [
   'checkbox',
   'date',
   'url',
+  'createdTime',
 ];
 
 export const ColumnConfigPopover: React.FC<ColumnConfigPopoverProps> = ({

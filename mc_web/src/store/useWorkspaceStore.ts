@@ -10,7 +10,7 @@ import type {
   PropertyType,
   SelectOption,
 } from '../types/database';
-import { normalizeBlock } from '../utils/blockUtils';
+import { normalizeBlock, createDefaultParagraph } from '../utils/blockUtils';
 import { cascadeDeletePage } from '../utils/workspaceUtils';
 import {
   createDatabase,
@@ -26,6 +26,7 @@ import {
   deleteSelectOption,
   addRow,
   updateRow,
+  updateRowBlocks,
   updateCell,
   deleteRow,
   reorderRows,
@@ -89,8 +90,9 @@ interface WorkspaceState {
   deleteDatabaseSelectOption: (databaseId: string, propertyId: string, optionId: string) => void;
   deleteDatabaseProperty: (databaseId: string, propertyId: string) => void;
   reorderDatabaseProperties: (databaseId: string, newOrder: string[]) => void;
-  addDatabaseRow: (databaseId: string, initialCells?: Record<string, CellValue>, atIndex?: number) => void;
+  addDatabaseRow: (databaseId: string, initialCells?: Record<string, CellValue>, atIndex?: number, blocks?: BlockNode[]) => void;
   updateDatabaseRow: (databaseId: string, rowId: string, updates: Partial<DatabaseRow>) => void;
+  updateDatabaseRowBlocks: (databaseId: string, rowId: string, blocks: BlockNode[]) => void;
   updateDatabaseCell: (databaseId: string, rowId: string, propertyId: string, value: CellValue) => void;
   deleteDatabaseRow: (databaseId: string, rowId: string) => void;
   reorderDatabaseRows: (databaseId: string, newOrder: string[]) => void;
@@ -275,6 +277,7 @@ const INITIAL_DATABASES: Record<string, DatabaseSchema> = {
           'prop-priority': 'p-high',
           'prop-done': true,
         },
+        blocks: [createDefaultParagraph()],
         createdAt: Date.now() - 86400000 * 2,
         updatedAt: Date.now() - 3600000,
       },
@@ -287,6 +290,7 @@ const INITIAL_DATABASES: Record<string, DatabaseSchema> = {
           'prop-priority': 'p-med',
           'prop-done': false,
         },
+        blocks: [createDefaultParagraph()],
         createdAt: Date.now() - 86400000,
         updatedAt: Date.now() - 1800000,
       },
@@ -705,11 +709,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       scheduleAutoSave(get, set, false);
     },
 
-    addDatabaseRow: (databaseId, initialCells, atIndex) => {
+    addDatabaseRow: (databaseId, initialCells, atIndex, blocks) => {
       set((state) => {
         const db = state.databases[databaseId];
         if (!db) return state;
-        const nextDb = addRow(db, initialCells, atIndex);
+        const nextDb = addRow(db, initialCells, atIndex, blocks);
         const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {
@@ -726,6 +730,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         const db = state.databases[databaseId];
         if (!db) return state;
         const nextDb = updateRow(db, rowId, updates);
+        const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
+        return {
+          databases: {
+            ...state.databases,
+            [databaseId]: safeDb,
+          },
+        };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseRowBlocks: (databaseId, rowId, blocks) => {
+      set((state) => {
+        const db = state.databases[databaseId];
+        if (!db) return state;
+        const nextDb = updateRowBlocks(db, rowId, blocks);
         const safeDb = validateDatabaseSchema(nextDb) ? nextDb : normalizeDatabaseSchema(nextDb);
         return {
           databases: {

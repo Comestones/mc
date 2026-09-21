@@ -7,7 +7,7 @@ export interface MultiSelectCellEditorProps {
   options: SelectOption[];
   onCommit: (val: string[]) => void;
   onCancel: () => void;
-  onNavigate: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
+  onNavigate?: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
   onCreateOption?: (name: string) => SelectOption | Promise<SelectOption>;
 }
 
@@ -130,7 +130,7 @@ export const MultiSelectCellEditor: React.FC<MultiSelectCellEditorProps> = ({
       e.preventDefault();
       e.stopPropagation();
       onCommit(selectedIds);
-      onNavigate(e.shiftKey ? 'prev' : 'next');
+      onNavigate?.(e.shiftKey ? 'prev' : 'next');
     }
   };
 

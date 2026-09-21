@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-09-17，**Sprint 1 (Day 1 至 Day 7: 脚手架与核心编辑器) 已 100% 圆满交付收官**（7 / 35，20%），即将开启 **Sprint 2 (多维数据库引擎与三重视图)**。
+截至 2026-09-21，**Sprint 1 与 Sprint 2 核心多维数据库基础阶段已高质量交付**（Day 1 至 Day 11，已完成 11 / 35，31.4%），当前多维数据库引擎已全面具备 8 类字段类型与 Row as Page 行详情编辑闭环，即将推进 **Day 12 看板视图 (Board View)**。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -82,14 +82,22 @@
   - **专用单元格编辑器**：拆分 `TextCellEditor`（文本/标题编辑、IME 防误触）、`NumberCellEditor`（数字过滤、monospace 右对齐）、`SelectCellEditor`（单选 Popover、搜索过滤、新建选项、色彩高亮、上下方向键隔离）、`MultiSelectCellEditor`（多选 Popover、批量勾选、标签徽章展示、一键清除）。
   - **字段与选项配置**：`ColumnConfigPopover` 支持列重命名、字段类型安全切换（主标题列禁止改类型与删除保护）、删除列；Select/Multi-select 支持选项新增、重命名、8 款精选预设色彩选择、删除与行数据级联清理。
   - **无障碍与交互隔离**：Checkbox 支持 Space 键即时勾选与点击切换；选项 Popover 打开时隔离 Grid 导航，关闭后平滑归还单元格焦点。
-  - **全量测试与回归**：新增 `scripts/verify-day10.mjs`（5 大核心契约与 200 行原子迁移耗时 < 1ms），Vitest 测试扩充至 **72 项全部通过**，Day 2 ~ Day 9 全量历史回归零报错，默认生产构建连续两次以退出码 0 成功打包。
+  - **全量测试与回归**：新增 `scripts/verify-day10.mjs`（6 大核心契约与 200 行原子迁移耗时 < 1ms），Vitest 测试扩充至 **80 项全部通过**，Day 2 ~ Day 9 全量历史回归零报错，默认生产构建连续两次以退出码 0 成功打包。
+- **Day 11 扩展字段类型与行详情弹窗 (Extended Property Types & Row as Page)**：
+  - **扩展字段契约与安全**：交付 `date`（本地 `YYYY-MM-DD` 严格格式与虚构日期拦截，防时区漂移）、`url`（协议白名单校验、无协议自动补全 `https://`、恶意协议拦截、外链安全属性）与 `createdTime`（纯只读派生自 `DatabaseRow.createdAt`，禁止写入 `row.cells`）。
+  - **专用单元格编辑器**：交付 `DateCellEditor`（实时输入校验、Escape 回退原值、错误状态提示与 `aria-invalid`）、`UrlCellEditor`（自动补全协议、恶意协议拦截、外部链接安全打开）与 `CreatedTimeCell`（只读格式化展示，无额外 tab stop）。
+  - **表头新增字段下拉菜单**：表头新增列入口拆分为快速添加文本列按钮与类型下拉菜单触发器，支持直接从下拉菜单选择并添加 8 种字段类型。
+  - **Row as Page 数据模型与正文编辑**：`DatabaseRow` 扩展 `blocks?: BlockNode[]`；`BlockEditor` 解耦为受控/注入模式；旧快照自愈保底默认段落；行删除级联清理正文。
+  - **行详情弹窗 (DatabaseRowDetail)**：交付 `role="dialog"` 抽屉弹窗，顶部主标题与属性网格实时双向同步，正文内嵌 `BlockEditor`，完整支持焦点捕获、Escape 关闭与焦点精确归还。
+  - **全量测试与回归**：新增 `scripts/verify-day11.mjs`（6 大核心契约与 200 行基准耗时全部达标），Vitest 真实组件测试扩充至 **80 项全部通过**，Day 2 ~ Day 10 全量历史回归零报错，默认生产构建连续两次以退出码 0 成功打包。
 
 ## 🎯 下一阶段：Sprint 2 (多维数据库引擎与三重视图，Day 8 - 14)
 
 - **Day 8**：多维数据库 Schema 设计与底层数据层 *(已完成)*。
 - **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑 *(已完成)*。
 - **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect) *(已完成)*。
-- **Day 11**：扩展字段类型 (Date, URL) 与行详情展开为页面 (Row as Page)。
+- **Day 11**：扩展字段类型 (Date, URL, CreatedTime) 与行详情展开为页面 (Row as Page) *(已完成)*。
+- **Day 12**：看板视图 (Board / Kanban View)。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 

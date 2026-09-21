@@ -10,6 +10,7 @@ import {
   Table as TableIcon,
   Plus,
   ChevronDown,
+  Clock,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { PropertyType } from '../../../types/database';
@@ -25,6 +26,7 @@ export const PROPERTY_TYPE_ICONS: Record<PropertyType, React.FC<{ className?: st
   checkbox: CheckSquare,
   date: Calendar,
   url: LinkIcon,
+  createdTime: Clock,
 };
 
 export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
@@ -36,7 +38,19 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   checkbox: '复选框',
   date: '日期',
   url: '链接',
+  createdTime: '创建时间',
 };
+
+export const AVAILABLE_ADD_TYPES: PropertyType[] = [
+  'text',
+  'number',
+  'select',
+  'multiSelect',
+  'checkbox',
+  'date',
+  'url',
+  'createdTime',
+];
 
 import {
   MIN_COLUMN_WIDTH,
@@ -192,12 +206,39 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
     // 取消操作绝不提交 Store，保证列宽保持原值
   };
 
-  const handleAddColumn = () => {
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部或按 Escape 关闭添加列菜单
+  useEffect(() => {
+    if (!isAddMenuOpen) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setIsAddMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAddMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAddMenuOpen]);
+
+  const handleCreateColumn = (type: PropertyType) => {
     const newIndex = propertyOrder.length + 1;
+    const label = PROPERTY_TYPE_LABELS[type] || '字段';
     addDatabaseProperty(databaseId, {
-      name: `字段 ${newIndex}`,
-      type: 'text',
+      name: `${label} ${newIndex}`,
+      type,
+      ...(type === 'select' || type === 'multiSelect' ? { options: [] } : {}),
     });
+    setIsAddMenuOpen(false);
   };
 
   return (
@@ -297,21 +338,65 @@ export const TableHeader: React.FC<TableHeaderProps> = ({
           );
         })}
 
-        {/* 表头最右侧新增列按钮 */}
+        {/* 表头最右侧新增列按钮与类型菜单 */}
         <th
           role="presentation"
           data-testid="db-header-add-column"
-          className="w-10 px-2 py-2 text-center text-text-muted-light dark:text-text-muted-dark border-r border-border-light/60 dark:border-border-dark/60 font-normal"
+          className="relative min-w-[50px] px-1 py-1.5 text-center text-text-muted-light dark:text-text-muted-dark border-r border-border-light/60 dark:border-border-dark/60 font-normal"
         >
-          <button
-            type="button"
-            data-testid="table-add-column-btn"
-            onClick={handleAddColumn}
-            className="p-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 rounded transition-colors inline-flex items-center justify-center text-text-muted-light hover:text-text-primary-light dark:hover:text-text-primary-dark"
-            title="添加列"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center justify-center gap-0.5">
+            <button
+              type="button"
+              data-testid="table-add-column-btn"
+              onClick={() => handleCreateColumn('text')}
+              className="p-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 rounded transition-colors inline-flex items-center justify-center text-text-muted-light hover:text-text-primary-light dark:hover:text-text-primary-dark"
+              title="添加列"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              data-testid="table-add-column-menu-trigger"
+              aria-haspopup="menu"
+              aria-expanded={isAddMenuOpen}
+              onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+              className="p-1 hover:bg-neutral-200/60 dark:hover:bg-neutral-800 rounded transition-colors inline-flex items-center justify-center text-text-muted-light hover:text-text-primary-light dark:hover:text-text-primary-dark"
+              title="选择字段类型"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
+
+          {isAddMenuOpen && (
+            <div
+              ref={addMenuRef}
+              role="menu"
+              aria-label="选择字段类型"
+              data-testid="add-column-type-menu"
+              className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-[#252528] border border-border-light dark:border-border-dark rounded-lg shadow-lg z-50 py-1 text-left select-none"
+            >
+              <div className="px-2.5 py-1 text-[11px] font-medium text-text-muted-light dark:text-text-muted-dark border-b border-border-light/60 dark:border-border-dark/60 mb-1">
+                选择字段类型
+              </div>
+              {AVAILABLE_ADD_TYPES.map((type) => {
+                const Icon = PROPERTY_TYPE_ICONS[type] || TableIcon;
+                const label = PROPERTY_TYPE_LABELS[type];
+                return (
+                  <button
+                    key={type}
+                    role="menuitem"
+                    type="button"
+                    data-testid={`add-column-type-option-${type}`}
+                    onClick={() => handleCreateColumn(type)}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-text-primary-light dark:text-text-primary-dark hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-left"
+                  >
+                    <Icon className="w-3.5 h-3.5 text-text-muted-light dark:text-text-muted-dark flex-shrink-0" />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </th>
       </tr>
     </thead>

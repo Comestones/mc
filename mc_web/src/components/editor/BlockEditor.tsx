@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BlockNode, BlockType } from '../../types/document';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { cn } from '../../utils/cn';
 import { BlockItem } from './BlockItem';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { BubbleMenu, FormatStates } from './BubbleMenu';
@@ -27,14 +28,20 @@ import {
   serializeBlocksToMarkdown,
 } from '../../utils/blockUtils';
 
-interface BlockEditorProps {
-  documentId: string;
+export interface BlockEditorProps {
+  documentId?: string;
   initialBlocks?: BlockNode[];
+  blocks?: BlockNode[];
+  onChange?: (blocks: BlockNode[]) => void;
+  className?: string;
 }
 
 export const BlockEditor: React.FC<BlockEditorProps> = ({
   documentId,
   initialBlocks,
+  blocks: controlledBlocks,
+  onChange,
+  className,
 }) => {
   const updateDocumentBlocks = useWorkspaceStore(
     (state) => state.updateDocumentBlocks
@@ -42,11 +49,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   // 确保文档至少有一个可编辑块，并执行统一数据归一化
   const getInitialBlocks = useCallback((): BlockNode[] => {
-    if (initialBlocks && initialBlocks.length > 0) {
-      return initialBlocks.map(normalizeBlock);
+    const raw = controlledBlocks || initialBlocks;
+    if (raw && raw.length > 0) {
+      return raw.map(normalizeBlock);
     }
     return [createDefaultParagraph()];
-  }, [initialBlocks]);
+  }, [controlledBlocks, initialBlocks]);
 
   const [blocks, setBlocks] = useState<BlockNode[]>(getInitialBlocks);
   const blocksRef = useRef<BlockNode[]>(blocks);
@@ -104,7 +112,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           : newBlocks.map(normalizeBlock);
       blocksRef.current = safeBlocks;
       setBlocks(safeBlocks);
-      updateDocumentBlocks(documentId, safeBlocks);
+      if (onChange) {
+        onChange(safeBlocks);
+      } else if (documentId) {
+        updateDocumentBlocks(documentId, safeBlocks);
+      }
 
       if (options?.focus !== undefined) {
         setCursorFocus(options.focus);
@@ -126,7 +138,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         }, 500);
       }
     },
-    [documentId, updateDocumentBlocks, pushHistory]
+    [documentId, onChange, updateDocumentBlocks, pushHistory]
   );
 
   // 组件卸载时严格清理未完成定时器
@@ -172,15 +184,20 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   // 当初始传入的数据存在未规整属性时（如负数、小数、非法 checked），自动完成规整并同步至 Store
   useEffect(() => {
+    const raw = controlledBlocks || initialBlocks;
     const fresh = getInitialBlocks();
-    const needsNormalize = initialBlocks?.some((b, i) => {
+    const needsNormalize = raw?.some((b, i) => {
       const norm = fresh[i];
       return !norm || JSON.stringify(b) !== JSON.stringify(norm);
     });
     if (needsNormalize) {
-      updateDocumentBlocks(documentId, fresh);
+      if (onChange) {
+        onChange(fresh);
+      } else if (documentId) {
+        updateDocumentBlocks(documentId, fresh);
+      }
     }
-  }, [documentId, getInitialBlocks, initialBlocks, updateDocumentBlocks]);
+  }, [documentId, getInitialBlocks, initialBlocks, controlledBlocks, onChange, updateDocumentBlocks]);
 
   // 撤销 (Undo)
   const handleUndo = useCallback(() => {
@@ -193,9 +210,13 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       const target = historyRef.current[historyIndexRef.current];
       blocksRef.current = target;
       setBlocks(target);
-      updateDocumentBlocks(documentId, target);
+      if (onChange) {
+        onChange(target);
+      } else if (documentId) {
+        updateDocumentBlocks(documentId, target);
+      }
     }
-  }, [documentId, updateDocumentBlocks]);
+  }, [documentId, onChange, updateDocumentBlocks]);
 
   // 重做 (Redo)
   const handleRedo = useCallback(() => {
@@ -208,9 +229,13 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       const target = historyRef.current[historyIndexRef.current];
       blocksRef.current = target;
       setBlocks(target);
-      updateDocumentBlocks(documentId, target);
+      if (onChange) {
+        onChange(target);
+      } else if (documentId) {
+        updateDocumentBlocks(documentId, target);
+      }
     }
-  }, [documentId, updateDocumentBlocks]);
+  }, [documentId, onChange, updateDocumentBlocks]);
 
   // Day 6: 选中指定块（支持普通点击、Shift 连续选区、Ctrl/Cmd 增量选区）
   const handleSelectBlock = useCallback(
@@ -1750,7 +1775,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   return (
     <div
       ref={editorContainerRef}
-      className="space-y-1 mt-4 min-h-[300px] cursor-text pb-24 relative"
+      className={cn("space-y-1 mt-4 min-h-[300px] cursor-text pb-24 relative", className)}
       onClick={handleBottomClick}
     >
       {blocks.map((block, idx) => (

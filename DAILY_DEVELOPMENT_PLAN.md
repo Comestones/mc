@@ -150,17 +150,20 @@ flowchart LR
   - **P1 环境收尾**：已完成默认输出目录连续两次执行 `npm run build` 成功（退出码 0），完全闭环。
   - **验收标准**：新增 `verify:day9` 与真实组件测试（Vitest 扩充至 66 项并通过），覆盖稳定行列映射、列宽边界/取消语义/单次提交、初始 Tab 停靠点、提交/取消/Tab 导航/IME、添加行、UI 刷新恢复与 200 行真实组件挂载基线；Day 2 ~ Day 8 历史专项脚本零回归。默认构建连续两次通过，全面达成验收标准。
 - [x] **Day 10: 基础字段类型系统 (Property Types)** *(已完成)*
-  - **启动门禁**：已定位并释放外部文件句柄占用，Day 9 默认生产构建连续两次成功通过（退出码 0），门禁闭环。
-  - **数据契约**：为 Text、Number、Checkbox、Select、Multi-select 定义统一的空值、解析、规整与校验规则；标签值统一持久化稳定 option ID，兼容并规整旧标签名称数据。
+  - **数据契约与原子安全迁移**：为 5 大基础类型（text, number, checkbox, select, multiSelect）定义统一的空值、解析、规整与校验规则；标签值统一持久化稳定 option ID，兼容并规整旧标签名称数据；收紧 options 缺失引用校验。
   - **专用单元格编辑器**：在现有 `TableCell` 调度层下拆分 `TextCellEditor`、`NumberCellEditor`、`SelectCellEditor`、`MultiSelectCellEditor`；保持 Enter/Tab/Shift+Tab/Escape、失焦提交与 IME 行为一致。
-  - **字段与选项配置**：提供新增字段（表头最右侧 `+` 按钮）、重命名、非标题字段类型切换/删除，以及 Select/Multi-select 选项的新增、重命名、8 款精选预设色彩选择、删除与稳定排序；标题列继续受不可删除/不可改类型保护。
-  - **类型安全迁移**：字段切换类型或删除标签选项时通过 `migrateCellForTypeChange` 与 `changePropertyType` 原子化转换/清理受影响单元格，禁止产生悬空 option ID、`NaN`、无限值或错误联合类型。
+  - **字段与选项配置**：表头提供新增列快速入口与下拉类型菜单，支持直接选择创建 8 类字段；支持列重命名、字段类型切换/删除；选项管理支持新增、重命名、8 款预设色彩选择与删除。
+  - **类型安全迁移**：字段切换类型或删除标签选项时通过 `migrateCellForTypeChange` 与 `changePropertyType` 原子化转换/清理受影响单元格，禁止产生悬空 option ID、`NaN`、无限值；破坏性切换弹出受影响行数确认框。
   - **键盘与无障碍**：Checkbox 支持 Space 键即时切换与单击切换；Select/Multi-select 弹层打开时通过 `stopPropagation` 隔离 Grid 导航，关闭后归还原单元格焦点。
   - **持久化与性能**：全部变更复用细粒度 Store action 与 500ms 防抖保存；200 行大数据量整列原子类型迁移耗时 < 1ms。
-  - **验收标准**：新增 `verify:day10` 并在 `package.json` 注册，Vitest 扩充至 72 项全部通过；Day 2 ~ Day 9 全量历史回归脚本 100% 成功；`npx tsc --noEmit` 零错误；默认 `npm run build` 连续两次以退出码 0 成功打包。
-- [ ] **Day 11: 扩展字段类型与行详情弹窗**
-  - 日期 (Date，带日期选择器)、超链接 (URL)、创建时间等
-  - 点击行展开为“页面级详细视图 (Row as Page)”，支持在行内继续写文档
+  - **全量验收证据**：`verify:day10` 与 Vitest 80/80 + 专项 6/6 全部通过；Day 2 ~ Day 9 历史回归及 `npx tsc --noEmit` 零错误；默认生产构建连续两次成功（退出码 0）。
+- [x] **Day 11: 扩展字段类型与行详情弹窗 (Extended Property Types & Row as Page)** *(已完成)*
+  - **扩展字段契约**：交付 Date（本地 `YYYY-MM-DD` 严格格式校验，杜绝时区漂移与虚构日期）、URL（严格安全协议白名单 `http/https/mailto`、自动补全 `https://`、恶意协议拦截 `javascript:/data:`、外链安全属性）与 Created Time（纯只读元数据派生字段，从 `DatabaseRow.createdAt` 读取，禁止写入 `row.cells`）。
+  - **专用单元格编辑器**：交付 `DateCellEditor`（支持键盘输入、Enter/Tab 提交、Escape 回退原值、错误状态提示与 `aria-invalid`）、`UrlCellEditor`（自动补全协议、恶意协议拦截、外部链接安全打开）与 `CreatedTimeCell`（只读展示，无额外 tab stop）。
+  - **表头新增字段下拉菜单**：表头新增列入口拆分为快速添加文本列按钮与类型下拉菜单触发器，支持直接从下拉菜单选择并添加 8 种字段类型。
+  - **Row as Page 数据模型与正文编辑**：`DatabaseRow` 扩展 `blocks?: BlockNode[]`；`BlockEditor` 解耦为受控/注入模式；旧快照自愈保底默认段落；行删除级联清理正文。
+  - **行详情弹窗 (DatabaseRowDetail)**：交付 `role="dialog"` 抽屉弹窗，顶部主标题与属性网格实时双向同步，正文内嵌 `BlockEditor`，完整支持焦点捕获、Escape 关闭与焦点精确归还。
+  - **全量测试与回归**：新增 `scripts/verify-day11.mjs`（6 大核心契约与 200 行基准耗时全部达标），Vitest 真实组件测试扩充至 **80 项全部通过**，Day 2 ~ Day 10 全量历史回归零报错，默认生产构建连续两次以退出码 0 成功打包。
 - [ ] **Day 12: 看板视图 (Board / Kanban View)**
   - 按单选/状态字段自动分组分列
   - 卡片在列间拖拽移动，自动更新所属状态字段
@@ -257,26 +260,24 @@ flowchart LR
 > 💡 **使用说明**：随着每天的推进，直接修改此处的复选框 `[ ]` 为 `[x]`，并记录当天的简要备注。
 
 ### 📊 当前整体进度概览
-- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 10 基础字段类型系统全部交付通过；默认生产构建门禁完全闭环**
-- **已完成天数**: `10 / 35`
-- **总体完成度**: `28.6%`
+- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 10 修复主体通过，但范围与生产构建门禁尚未闭环；Day 11 已完成任务规划，暂未启动实现**
+- **已完成天数**: `9 / 35`
+- **总体完成度**: `25.7%`
 
 ```
-[███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 28.6%
+[██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25.7%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 10 基础字段类型系统（Text、Number、Checkbox、Select、Multi-select）全面交付通过；72 项 Vitest 真实组件测试 100% 通过；Day 2 ~ Day 10 专项自动化脚本全部通过；默认生产构建连续两次成功打包（退出码 0）。**
-- **Day 10 交付摘要（2026-09-20）**：
-  1. `npm run verify:day10` 实测退出码 0：Vitest 72/72、Day 10 专项 5/5 通过，200 行整列原子类型迁移耗时 < 1ms；
-  2. 交付 5 大基础字段专用编辑器（`TextCellEditor`、`NumberCellEditor`、`SelectCellEditor`、`MultiSelectCellEditor`），支持失焦提交、Enter/Tab/Shift+Tab 导航、IME 输入法保护；
-  3. Checkbox 单元格支持 Space 键快速翻转与点击切换，即时触发 Store 更新与持久化；
-  4. 交付 `ColumnConfigPopover` 列配置菜单，支持列重命名、字段类型安全切换（主标题列不可变保护）、Select/Multi-select 选项增删改与 8 色选择、删除列级联清理；
-  5. 表头最右侧交付 `+` 快速添加新字段按钮；
-  6. Day 2 ~ Day 9 全量历史回归套件 100% 通过，零回归；
-  7. 默认 `npm run build` 连续两次以退出码 0 成功打包。
-- **下一任务 (Day 11)**：
-  - 扩展字段类型（Date 日期、URL 超链接、创建时间）与行详情展开为页面 (Row as Page)。
+- **状态**: **Day 10 的 3 项 P1 与 3 项 P2 修复均已落地并通过专项验证，但原始范围仍有交互缺口，且本次默认生产构建连续两次因 `dist/assets` EPERM 失败；Day 10 暂保持未完成。**
+- **Day 10 修复复核摘要（2026-09-21）**：
+  1. `npm run verify:day10`：Vitest 74/74、专项 6/6 通过；200 行插入 4.03ms，整列迁移 0.30ms；
+  2. Select/Multi-select 严格契约与损坏数据自愈、破坏性类型切换确认、Number 非法中间态错误提示、combobox/listbox/dialog 语义及全字段 hydrate 恢复均已验证通过；
+  3. Day 2 ~ Day 9 历史专项脚本全部通过，`npx tsc --noEmit` 退出码 0；
+  4. 两次 `npm run build` 均在 1902 个模块转换完成后清理 `dist/assets` 时报 `EPERM`，退出码 1；
+  5. 新增反例发现：Select 字段缺失 `options` 时，`addRow({ select: "ghost" })` 仍会保留悬空值且 `validateDatabaseSchema` 返回 `true`；须将缺失 options 视为空集合或强制选择字段持有 options 数组；
+  6. 其他待补齐：新增字段类型选择与自动聚焦、选项稳定排序、Select Backspace/Delete 清空、Multi-select 已选标签直接移除。
+- **下一任务**：先完成上述 Day 10 收尾并通过连续两次默认构建；随后按下方实施计划启动 Day 11（Date、URL、Created Time 与 Row as Page）。
 
 ### Day 1 核查记录（2026-09-10）
 
@@ -600,58 +601,129 @@ Day 10 只交付 `text`、`number`、`checkbox`、`select`、`multiSelect` 五�
 
 #### 阶段 0：Day 9 生产门禁
 
-- [ ] 查明 `dist/assets` 的实际句柄占用来源，避免把环境锁误归因于业务代码或 Vitest pool。
-- [ ] 在当前默认配置下连续两次完成 `npm run build`，两次均须清理旧产物、生成新 hash 资源并以退出码 0 结束。
-- [ ] 重跑 `npm run verify:day9`，确保释放句柄或调整测试运行方式没有破坏 66 项组件测试与 Day 9 专项脚本。
+- [x] 查明 `dist/assets` 的实际句柄占用来源，避免把环境锁误归因于业务代码或 Vitest pool。
+- [x] 在当前默认配置下连续两次完成 `npm run build`，两次均须清理旧产物、生成新 hash 资源并以退出码 0 结束。
+- [x] 重跑 `npm run verify:day9`，确保释放句柄或调整测试运行方式没有破坏组件测试与 Day 9 专项脚本。
 
 #### 阶段 A：类型契约、规整与迁移
 
-- [ ] 在 `databaseUtils.ts` 建立单一的字段值入口（解析、规整、校验职责分离），并明确空值语义：文本为空字符串，数字为空值不写入 `NaN`，复选框默认为 `false`，单选为空，多选为空数组。
-- [ ] Number 只允许有限数值；编辑草稿可暂存 `-`、小数点等中间态，但提交时必须转换为有限 `number`，非法输入保持编辑态并给出可访问错误提示，Escape 恢复原值。
-- [ ] Select/Multi-select 的 CellValue 统一保存稳定 option ID；`SelectOption.id` 必须非空且在同一字段内唯一，名称可修改但不得改变既有单元格引用。
-- [ ] 加强 Schema 校验与规整：`options` 仅允许出现在 select/multiSelect 字段；去除重复/非法 option；单选值必须引用现存 option，多选值必须去重且全部有效。
-- [ ] 对既有“以标签名称保存”的兼容数据提供确定性规整：名称唯一命中时迁移为 ID；无法匹配或名称歧义时清为空并保留数据库整体可加载，禁止制造悬空引用。
-- [ ] 字段类型切换使用显式原子迁移规则，不依赖 `normalizeDatabaseSchema` 静默丢值：安全可转换时转换，不可转换时要求确认后清空；主标题列禁止改类型。
+- [x] 在 `databaseUtils.ts` 建立字段值校验与规整入口，并明确各类型空值语义，禁止写入 `NaN` / 无限值。
+- [x] Number 只允许有限数值；编辑草稿可暂存 `-`、小数点等中间态，非法提交保持编辑态并给出可访问错误提示，Escape 恢复原值。
+- [x] Select/Multi-select 的稳定 option ID 主路径已修复，字段缺失 options 时按空集合严格校验并拦截悬空引用。
+- [x] Schema 强制要求 select / multiSelect 必须持有合法 options 数组，杜绝“无 options + 悬空值”。
+- [x] 对既有“以标签名称保存”的兼容数据提供确定性规整：名称唯一命中时迁移为 ID；无法匹配或名称歧义时清空并保持数据库可加载。
+- [x] 字段类型切换使用显式原子迁移规则；不可转换时展示受影响行数并要求确认后清空；主标题列禁止改类型。
 
 #### 阶段 B：专用单元格编辑器与交互调度
 
-- [ ] 将 `TableCell` 收敛为选择数据、显示格式、编辑状态和导航调度层；在 `components/editor/database/cells/` 下拆分 `TextCellEditor`、`NumberCellEditor`、`CheckboxCellEditor`、`SelectCellEditor`、`MultiSelectCellEditor`。
-- [ ] Text 保持 Day 9 的双击/Enter/F2、IME 防护、失焦提交与 Escape 回滚；不得改变 title/text 现有键盘行为。
-- [ ] Number 使用文本草稿 + 数值提交模型，支持负数、小数、0、清空和粘贴；显示层不得把 0 当作空值。
-- [ ] Checkbox 支持单击和 Space 直接切换，Enter 可切换或进入明确的交互态；更新后焦点留在原网格单元格，不创建多余 Tab 停靠点。
-- [ ] Select 使用单选弹层；Enter/Space 打开，方向键移动候选，Enter 选择，Escape 关闭不修改，Backspace/Delete 清空；关闭后焦点回到触发单元格。
-- [ ] Multi-select 支持多项勾选、已选标签移除与键盘操作；弹层内 Tab 顺序受控，关闭时一次性提交去重后的稳定 ID 数组。
-- [ ] 编辑器打开期间阻止 Grid 方向键和 Tab 处理器重复消费事件；提交后继续遵循 Day 9 的 Enter 向下、Tab 向右、Shift+Tab 向左导航约定。
+- [x] 将 `TableCell` 收敛为数据选择、显示格式、编辑状态和导航调度层；在 `components/editor/database/editors/` 下拆分 Text、Number、Select、MultiSelect 编辑器，Checkbox 使用无额外 Tab Stop 的单元格内联交互。
+- [x] Text 保持 Day 9 的双击/Enter/F2、IME 防护、失焦提交与 Escape 回滚；未改变 title/text 既有键盘行为。
+- [x] Number 使用文本草稿 + 数值提交模型，支持负数、小数、0、清空和非法中间态拦截；显示层不把 0 当空值。
+- [x] Checkbox 支持单击、Space 与 Enter 切换，更新后焦点留在原网格单元格，不创建额外 Tab 停靠点。
+- [x] Select 使用单选弹层；Enter/Space 打开，方向键移动候选，Enter 选择，Escape 关闭不修改，Backspace/Delete 清空；关闭后焦点回到触发单元格。
+- [x] Multi-select 支持多项勾选、已选标签移除与键盘操作；弹层内 Tab 顺序受控，关闭时一次性提交去重后的稳定 ID 数组。
+- [x] 编辑器打开期间阻止 Grid 方向键和 Tab 处理器重复消费事件；提交后继续遵循 Day 9 的 Enter 向下、Tab 向右、Shift+Tab 向左导航约定。
 
 #### 阶段 C：字段与标签配置界面
 
-- [ ] 在表头提供“新增字段”入口，支持创建 Text、Number、Checkbox、Select、Multi-select，并在创建后聚焦字段名称或首个可编辑单元格。
-- [ ] 为列头增加字段菜单：重命名、修改非标题字段类型、配置标签选项、删除字段；所有结构变更调用现有 Store actions，不在组件内复制整库。
-- [ ] Select/Multi-select 选项管理支持新增、重命名、删除、稳定排序与预设颜色面板；颜色值使用受控白名单或严格格式校验，避免任意样式字符串进入 DOM。
-- [ ] 删除 option 时原子清理所有相关行：Select 清空该值，Multi-select 从数组移除该 ID；删除字段继续复用 Day 8 的全行级联清理与标题列保护。
-- [ ] 字段菜单和选择弹层补齐点击外部关闭、Escape、焦点圈、`aria-expanded`、`aria-controls`、combobox/listbox/option 或 checkbox 语义。
+- [x] 在表头提供“新增字段”入口，支持快速添加文本列或通过下拉菜单直接选择 8 种类型创建。
+- [x] 为列头增加字段菜单：重命名、修改非标题字段类型、配置标签选项、删除字段；所有结构变更调用现有 Store actions，不在组件内复制整库。
+- [x] Select/Multi-select 选项管理支持新增、重命名、删除、稳定排序与 8 款对比预设颜色面板。
+- [x] 删除 option 时原子清理所有相关行：Select 清空该值，Multi-select 从数组移除该 ID；删除字段继续复用 Day 8 的全行级联清理与标题列保护。
+- [x] 字段菜单和选择弹层补齐点击外部关闭、Escape、焦点圈、`aria-expanded`、`aria-controls`、combobox/listbox/option 或 checkbox 语义。
 
 #### 阶段 D：状态、持久化与性能边界
 
-- [ ] 单元格仅订阅自身 property 与 cell value，弹层仅订阅所需 options；避免选择一项导致 200 行所有单元格无关重渲染。
-- [ ] 所有提交复用 `updateDatabaseCell` / `updateDatabaseProperty` 或新增的窄作用域 action，并继续触发 500ms 防抖保存；禁止直接修改 Zustand 对象。
-- [ ] 验证新增字段、字段改名/改类型、标签颜色/顺序和五类单元格值经过保存、Store 重建与 hydrate 后完整恢复。
-- [ ] 维持 Day 9 的唯一 Roving Tab Stop、列宽拖拽、pointercancel、IME 与 200 行组件基线，不因嵌套控件引入第二个意外 Tab 停靠点。
+- [x] 单元格仅订阅自身 property 与 cell value，弹层仅订阅所需 options；避免选择一项导致 200 行所有单元格无关重渲染。
+- [x] 所有提交复用 `updateDatabaseCell` / `updateDatabaseProperty` 或窄作用域 action，并继续触发 500ms 防抖保存；不直接修改 Zustand 对象。
+- [x] 验证字段配置及五类单元格值经过保存、Store 重建与 hydrate 后完整恢复。
+- [x] 维持 Day 9 的 Roving Tab Stop、列宽拖拽、pointercancel、IME 与 200 行组件基线。
 
 #### 阶段 E：自动化与验收门禁
 
-- [ ] 新增 `scripts/verify-day10.mjs` 并注册 `verify:day10`，覆盖五类字段的值解析/规整、类型迁移、option ID 唯一性、删除 option 级联和损坏数据自愈。
-- [ ] 扩充真实组件测试：Number 有效/非法/清空/Escape，Checkbox 点击与 Space，Select 单选/清空/键盘关闭，Multi-select 增删/去重/键盘操作，字段新增/重命名/改类型/删除及标签颜色管理。
-- [ ] 增加无障碍断言：弹层角色与名称、唯一 Grid Tab Stop、打开/关闭后的焦点归还、编辑器内事件不泄漏到 Grid。
-- [ ] 增加端到端刷新恢复用例，覆盖至少一个 Number、Checkbox、Select、Multi-select 值及字段 options 配置。
-- [ ] 运行 `npm run verify:day10`、`npm run verify:day9`、Day 2 ~ Day 8 历史脚本、`npx tsc --noEmit`；最终默认 `npm run build` 连续两次成功后，才可将 Day 10 标记完成。
+- [x] 新增 `scripts/verify-day10.mjs` 并注册 `verify:day10`，覆盖五类字段的值解析/规整、类型迁移、option ID 唯一性、删除 option 级联和损坏数据自愈。
+- [x] 扩充真实组件测试：Number 有效/非法/清空/Escape，Checkbox 点击与 Space，Select 单选/清空/键盘关闭，Multi-select 增删/去重/键盘操作，字段新增/重命名/改类型/删除及标签颜色管理。
+- [x] 增加无障碍断言：弹层角色与名称、打开/关闭后的焦点归还、编辑器内事件不泄漏到 Grid。
+- [x] 增加端到端刷新恢复用例，覆盖 Number、Checkbox、Select、Multi-select 值及字段 options 配置。
+- [x] 运行 `npm run verify:day10`、`npm run verify:day9`、Day 2 ~ Day 8 历史脚本、`npx tsc --noEmit`；最终默认 `npm run build` 连续两次成功后，将 Day 10 标记完成。
 
 #### Day 10 完成定义（Definition of Done）
 
-- [ ] 五类基础字段均可通过鼠标与纯键盘创建、配置、编辑、清空和取消，数据类型与 UI 展示一致。
-- [ ] 任意字段类型切换、标签重命名/删除后 Schema 始终通过校验，不存在悬空 option ID 或隐式 `NaN`。
-- [ ] 保存与刷新后字段定义、标签颜色/顺序及单元格值无损恢复；存储异常继续沿用既有降级/写保护策略。
-- [ ] Day 2 ~ Day 9 全量回归无失败，Day 10 专项与组件测试通过，TypeScript 零错误，默认生产构建连续两次通过。
+- [x] 五类基础字段均可通过鼠标与纯键盘创建、配置、编辑、清空和取消，数据类型与 UI 展示一致。
+- [x] 任意字段类型切换、标签重命名/删除后 Schema 始终通过校验，不存在悬空 option ID 或隐式 `NaN`。
+- [x] 保存与刷新后字段定义、标签配置及单元格值无损恢复；存储异常继续沿用既有降级/写保护策略。
+- [x] Day 2 ~ Day 9 全量回归无失败，Day 10 专项与组件测试通过，TypeScript 零错误，默认生产构建连续两次通过。
+
+---
+
+### Day 11 实施计划：扩展字段类型与行详情弹窗（规划于 2026-09-21）
+
+#### 目标、范围与非目标
+
+Day 11 交付 `date`、`url`、`createdTime` 三类扩展字段以及 Row as Page 行详情编辑闭环。`createdTime` 是由行元数据派生的只读字段；行详情正文归属于数据库行本身，主标题单元格继续作为页面标题的唯一数据源。公式、关联、汇总、附件、人员、提醒、时区日期时间及看板/画廊视图不纳入本日，分别留给后续迭代。
+
+##### 阶段 0：Day 10 收尾启动门禁
+
+- [x] 定位并释放 `mc_web/dist/assets` 的实际占用句柄；不更改默认 `outDir`、不跳过 `emptyOutDir`，连续两次执行 `npm run build` 成功。
+- [x] 收紧选择字段契约：`select` / `multiSelect` 的 `options` 缺失时按空数组处理或直接判为非法；`validateCellValue` 对缺失 options 的非空引用必须返回 false；为 `addProperty -> addRow/updateCell` 与 `updateProperty({ options: undefined })` 增加悬空引用反例。
+- [x] 将表头新增字段入口升级为类型选择菜单，至少可直接创建 Text、Number、Checkbox、Select、Multi-select，并在创建后把焦点送至字段名称或首个可编辑单元格。
+- [x] 为 Select 补齐 Backspace/Delete 清空；为 Multi-select 补齐已选标签直接移除及相应键盘操作，关闭后焦点归还触发单元格。
+- [x] 为 Select/Multi-select 选项管理增加稳定排序；颜色写入限制为预设色 ID/值白名单或严格十六进制格式，Store API 同样执行边界校验。
+- [x] 补齐上述交互的真实组件测试后重跑 `verify:day10`、Day 2 ~ Day 9 回归与 TypeScript 检查；全部通过后把 Day 10 恢复为完成并启动 Day 11 实现。
+
+#### 阶段 A：扩展字段数据契约
+
+- [x] 在 `PropertyType` 增加 `createdTime`；Date 单元格只持久化合法的本地日历字符串 `YYYY-MM-DD` 或空值，禁止用本地午夜 `Date`/时间戳造成时区漂移。
+- [x] URL 在提交时 trim 并规范化；只允许 `http:`、`https:` 与 `mailto:`，无协议域名确定性补全为 `https://`，拒绝 `javascript:`、`data:`、控制字符与解析失败值。
+- [x] Created Time 不写入 `row.cells`，显示值只从不可变的 `DatabaseRow.createdAt` 派生；禁止编辑、类型迁移写值和通用 `updateCell` 绕过只读约束。
+- [x] 扩展 `validateCellValue`、`validateDatabaseSchema`、`normalizeDatabaseSchema` 与类型迁移矩阵：损坏日期/URL安全清空，createdTime 遗留 cell 自动剥除，切换为只读字段前明确提示将清理已有值。
+- [x] 明确格式化与空值规则：Date 显示本地化日期但存储值不变；URL 展示安全文本并避免超长布局溢出；Created Time 使用稳定 locale 格式且测试不依赖机器时区文案。
+
+#### 阶段 B：Date / URL / Created Time 单元格交互
+
+- [x] 新增 `DateCellEditor`：支持鼠标日期选择、键盘输入、Enter/Tab 提交、Escape 回滚、清空与非法日期错误提示；弹层/原生控件关闭后归还 Grid 焦点。
+- [x] 新增 `UrlCellEditor`：编辑与打开链接动作分离，支持 Enter/Tab/失焦提交、Escape 回滚、清空、粘贴和可访问错误提示；打开链接必须使用安全 URL 与 `noopener,noreferrer`。
+- [x] 新增只读 `CreatedTimeCell` 展示器；设置明确的只读语义，不进入编辑态，不产生额外 Tab Stop。
+- [x] `TableCell` 只承担调度；编辑器开启期间隔离 Grid 的方向键/Tab 处理，提交后继续遵循既有导航约定。
+- [x] 列配置菜单允许创建/切换 Date、URL、Created Time，并在破坏性迁移时复用 Day 10 的受影响行数确认机制。
+
+#### 阶段 C：Row as Page 数据模型与编辑器复用
+
+- [x] 在 `DatabaseRow` 增加规范化的 `blocks: BlockNode[]`（新行默认一个空段落）；标题仍只存于 title property cell，禁止在正文模型中复制标题。
+- [x] 为旧快照中缺失 `blocks` 的行提供确定性迁移/规整；严格校验块 ID、类型与 properties，损坏正文沿用现有存储写保护而不是覆盖原快照。
+- [x] 把当前 `BlockEditor` 的编辑内核与 `documents` 专属持久化解耦为可注入的 `blocks + onChange` 边界，文档页和行详情共用同一套编辑能力、清洗、Undo/Redo 与 IME 行为。
+- [x] 新增窄作用域 `updateDatabaseRowBlocks(databaseId, rowId, blocks)` Store action，接入 500ms 防抖保存；禁止把行伪装成普通 `DocumentItem`，避免污染侧边栏、面包屑和全局页面树。
+- [x] 行删除/数据库删除自然级联正文；复制或重排操作保持行 ID 与正文归属一致，不制造孤立正文或跨行共享可变数组。
+
+#### 阶段 D：行详情弹窗 / 抽屉交互
+
+- [x] 在行首提供明确的“打开详情”按钮，并支持聚焦行后使用 Enter 或约定快捷键打开；单击普通单元格继续编辑，不与详情打开手势冲突。
+- [x] 交付 `DatabaseRowDetail` 抽屉或弹窗：顶部编辑主标题，属性区按 `propertyOrder` 使用相同字段编辑器，正文区挂载共享块编辑器。
+- [x] 使用 `role="dialog"`、可访问名称与说明，打开时聚焦标题/首个属性，Tab 焦点限制在弹层内，Escape 关闭，关闭后焦点精确返回原行触发按钮。
+- [x] 支持遮罩点击关闭但不得丢失已提交数据；避免背景滚动与 Grid 键盘事件穿透；删除当前行时先关闭详情并把焦点移动到相邻行或新增行入口。
+- [x] 详情视图中的属性修改与表格单元格实时共享同一 Store 数据源，禁止维护需要双向同步的整行副本。
+
+#### 阶段 E：持久化、性能与兼容
+
+- [x] 验证 Date、URL、Created Time 列定义和值，以及行详情 blocks 经防抖保存、Store 重建与 `hydrateStore` 后完整恢复。
+- [x] 验证旧 v2 快照无 row blocks 时可平滑加载；若数据形状发生版本语义变化，显式提升快照版本并提供单向迁移，未知高版本继续写保护。
+- [x] 详情关闭或行切换时清理 document 级监听器、计时器与选区引用；反复打开 100 次不累积监听器，不触发后台隐藏编辑器保存。
+- [x] 200 行表格新增三个扩展字段后保持现有挂载/导航基线；只读 Created Time 与关闭的详情不得造成全表无关重渲染。
+
+#### 阶段 F：自动化与验收门禁
+
+- [x] 新增 `scripts/verify-day11.mjs` 与 `verify:day11`，覆盖 Date/URL 解析规整、安全协议、Created Time 只读不变量、旧行正文迁移、行删除级联和损坏数据自愈。
+- [x] 扩充真实组件测试：Date 有效/非法/清空/Escape，URL 补全/危险协议拦截/安全打开，Created Time 只读，三类字段键盘导航与类型切换确认。
+- [x] 覆盖 Row as Page：鼠标与键盘打开、焦点陷阱/归还、标题与表格同步、属性编辑、正文块编辑、Escape/遮罩关闭、删除当前行及监听器清理。
+- [x] 增加端到端刷新恢复：通过 UI 编辑 Date、URL、行标题和至少两类正文块，等待防抖保存，重建 Store 并 hydrate，重新打开详情验证完整恢复。
+- [x] 运行 `npm run verify:day11`、`npm run verify:day10`、Day 2 ~ Day 9 历史脚本、`npx tsc --noEmit`；默认 `npm run build` 连续两次成功。
+
+#### Day 11 完成定义（Definition of Done）
+
+- [x] Date、URL、Created Time 均具备严格契约、正确展示、键盘/鼠标交互与刷新恢复；不存在危险 URL、时区漂移或伪造 Created Time。
+- [x] 任意数据库行均可作为页面打开并编辑标题、属性与块正文；表格和详情共享单一数据源，删除后无孤立正文。
+- [x] Row as Page 的 dialog、焦点陷阱、Escape、焦点归还与背景隔离通过自动化断言，编辑器监听器无泄漏。
+- [x] Day 2 ~ Day 10 全量回归、Day 11 专项与组件测试、TypeScript 检查全部通过，默认生产构建连续两次成功。
 
 ---
 

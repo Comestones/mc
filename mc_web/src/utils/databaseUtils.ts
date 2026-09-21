@@ -7,8 +7,105 @@ import {
   type PropertyType,
   type SelectOption,
 } from '../types/database.ts';
+import type { BlockNode } from '../types/document.ts';
+import { createDefaultParagraph, normalizeBlock } from './blockUtils.ts';
 
 export const DEFAULT_TITLE_PROPERTY_ID = 'prop-title';
+
+/**
+ * 校验合法本地日期字符串 YYYY-MM-DD（验证有效年月日，杜绝时区漂移与虚构日期）
+ */
+export function isValidDateString(val: unknown): boolean {
+  if (typeof val !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(val)) return false;
+  const parts = val.split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return (
+    d.getFullYear() === year &&
+    d.getMonth() === month - 1 &&
+    d.getDate() === day
+  );
+}
+
+/**
+ * 校验合法 URL 字符串（限制安全协议 http:, https:, mailto:，拦截 javascript:, data: 与控制字符）
+ */
+export function isValidUrlString(val: unknown): boolean {
+  if (typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) return false;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:')
+  ) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === 'http:' ||
+      parsed.protocol === 'https:' ||
+      parsed.protocol === 'mailto:'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 规范化 URL 字符串：自动 trim，无协议时自动补全为 https://，遇到非法/危险协议返回 null
+ */
+export function normalizeUrlString(val: unknown): string | null {
+  if (typeof val !== 'string') return null;
+  let trimmed = val.trim();
+  if (!trimmed) return null;
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) return null;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:')
+  ) {
+    return null;
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    trimmed = `https://${trimmed}`;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (
+      parsed.protocol === 'http:' ||
+      parsed.protocol === 'https:' ||
+      parsed.protocol === 'mailto:'
+    ) {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 格式化 CreatedTime 为稳定的本地日期时间字符串 YYYY-MM-DD HH:mm
+ */
+export function formatCreatedTime(timestamp: number): string {
+  if (!timestamp || !Number.isFinite(timestamp)) return '-';
+  const date = new Date(timestamp);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d} ${h}:${min}`;
+}
 
 /**
  * 校验单元格值形态是否符合属性类型契约
@@ -20,30 +117,31 @@ export function validateCellValue(
 ): boolean {
   if (val === null || val === undefined) return true;
   switch (type) {
+    case 'createdTime':
+      // CreatedTime 纯属只读派生字段，禁止在单元格中持久化存储任何值
+      return false;
     case 'title':
     case 'text':
-    case 'date':
-    case 'url':
       return typeof val === 'string';
+    case 'date':
+      return isValidDateString(val);
+    case 'url':
+      return isValidUrlString(val);
     case 'number':
       return typeof val === 'number' && Number.isFinite(val);
     case 'checkbox':
       return typeof val === 'boolean';
     case 'select': {
       if (typeof val !== 'string') return false;
-      if (options !== undefined) {
-        return options.some((opt) => opt.id === val);
-      }
-      return true;
+      if (!options || options.length === 0) return false;
+      return options.some((opt) => opt.id === val);
     }
     case 'multiSelect': {
       if (!Array.isArray(val)) return false;
       if (!val.every((item) => typeof item === 'string')) return false;
       if (new Set(val).size !== val.length) return false;
-      if (options !== undefined) {
-        return val.every((item) => options.some((opt) => opt.id === item));
-      }
-      return true;
+      if (!options || options.length === 0) return val.length === 0;
+      return val.every((item) => options.some((opt) => opt.id === item));
     }
     default:
       return false;
@@ -179,23 +277,21 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
       }
     }
 
-    // 校验 options：仅允许在 select / multiSelect 字段中存在，其他字段携带 options 视为非法契约
+    // 校验 options：仅允许在 select / multiSelect 字段中存在，且必须为合法 SelectOption 数组，其他字段携带 options 视为非法契约
     if (prop.type !== 'select' && prop.type !== 'multiSelect') {
       if (prop.options !== undefined) return false;
     } else {
-      // select / multiSelect 必须为合法 SelectOption 数组且 option.id 唯一非空
-      if (prop.options !== undefined) {
-        if (!Array.isArray(prop.options)) return false;
-        const optIdSet = new Set<string>();
-        for (const opt of prop.options) {
-          if (!opt || typeof opt !== 'object') return false;
-          if (typeof opt.id !== 'string' || !opt.id.trim()) return false;
-          if (typeof opt.name !== 'string' || !opt.name.trim()) return false;
-          if (opt.color !== undefined && typeof opt.color !== 'string') return false;
-          const cleanId = opt.id.trim();
-          if (optIdSet.has(cleanId)) return false; // 重复 option ID 拦截
-          optIdSet.add(cleanId);
-        }
+      // select / multiSelect 强制要求 options 必须为合法数组，且 option.id 唯一非空
+      if (!Array.isArray(prop.options)) return false;
+      const optIdSet = new Set<string>();
+      for (const opt of prop.options) {
+        if (!opt || typeof opt !== 'object') return false;
+        if (typeof opt.id !== 'string' || !opt.id.trim()) return false;
+        if (typeof opt.name !== 'string' || !opt.name.trim()) return false;
+        if (opt.color !== undefined && typeof opt.color !== 'string') return false;
+        const cleanId = opt.id.trim();
+        if (optIdSet.has(cleanId)) return false; // 重复 option ID 拦截
+        optIdSet.add(cleanId);
       }
     }
   }
@@ -227,10 +323,25 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
     if (!row.cells || typeof row.cells !== 'object') return false;
     if (!rowSet.has(rowId)) return false;
 
+    // Day 11: 校验 row.blocks 正文块契约
+    if (row.blocks !== undefined) {
+      if (!Array.isArray(row.blocks)) return false;
+      for (const b of row.blocks) {
+        if (!b || typeof b !== 'object') return false;
+        if (typeof b.id !== 'string' || !b.id.trim()) return false;
+        if (typeof b.type !== 'string' || !b.type.trim()) return false;
+        if (typeof b.content !== 'string') return false;
+      }
+    }
+
     // 校验 cells：禁止包含未在 properties 中声明的悬空属性，且值形态必须符合类型契约与选项引用
     for (const [cellPropId, cellValue] of Object.entries(row.cells)) {
       if (!propSet.has(cellPropId)) return false; // 悬空属性直接拦截
       const propDef = db.properties[cellPropId];
+      // createdTime 只读派生字段禁止存储单元格值
+      if (propDef.type === 'createdTime') {
+        if (cellValue !== null && cellValue !== undefined) return false;
+      }
       if (!validateCellValue(cellValue, propDef.type, propDef.options)) {
         return false; // 非法单元格值形态或悬空 option 引用拦截
       }
@@ -310,7 +421,9 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
       name: typeof prop.name === 'string' && prop.name ? prop.name : '未命名列',
       type: safeType,
       width: safeWidth,
-      ...(safeOptions ? { options: safeOptions } : {}),
+      ...(safeType === 'select' || safeType === 'multiSelect'
+        ? { options: safeOptions || [] }
+        : {}),
     };
     if (safeType !== 'select' && safeType !== 'multiSelect') {
       delete properties[id].options;
@@ -430,6 +543,11 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
             normalizedVal = Array.from(new Set(resolvedIds));
           }
 
+          if (propDef?.type === 'createdTime') {
+            // createdTime 禁止存储单元格值，自愈剥除
+            normalizedVal = null;
+          }
+
           if (
             normalizedVal !== null &&
             normalizedVal !== undefined &&
@@ -449,11 +567,20 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
         ? row.updatedAt
         : dbUpdatedAt;
 
+    // Day 11: 确保每行具备合法的 blocks 正文块树（新行或缺失时兜底默认空段落）
+    let safeBlocks: BlockNode[];
+    if (Array.isArray(row.blocks) && row.blocks.length > 0) {
+      safeBlocks = row.blocks.map(normalizeBlock);
+    } else {
+      safeBlocks = [createDefaultParagraph()];
+    }
+
     rows[rowId] = {
       ...row,
       id: rowId,
       databaseId: database.id,
       cells: cleanCells,
+      blocks: safeBlocks,
       createdAt: rowCreatedAt,
       updatedAt: rowUpdatedAt,
     };
@@ -620,24 +747,35 @@ export function reorderProperties(
 export function addRow(
   db: DatabaseSchema,
   initialCells: Record<string, CellValue> = {},
-  atIndex?: number
+  atIndex?: number,
+  blocks?: BlockNode[]
 ): DatabaseSchema {
   const now = Date.now();
   const rowId = `row-${now}-${Math.random().toString(36).substring(2, 6)}`;
 
-  // 过滤仅保留有效属性列对应且值形态合法的值
+  // 过滤仅保留有效属性列对应且值形态合法的值（createdTime 禁止存储）
   const validCells: Record<string, CellValue> = {};
   for (const [propId, val] of Object.entries(initialCells)) {
     const propDef = db.properties[propId];
-    if (propDef && validateCellValue(val, propDef.type, propDef.options)) {
+    if (
+      propDef &&
+      propDef.type !== 'createdTime' &&
+      validateCellValue(val, propDef.type, propDef.options)
+    ) {
       validCells[propId] = val;
     }
   }
+
+  const safeBlocks =
+    Array.isArray(blocks) && blocks.length > 0
+      ? blocks.map(normalizeBlock)
+      : [createDefaultParagraph()];
 
   const newRow: DatabaseRow = {
     id: rowId,
     databaseId: db.id,
     cells: validCells,
+    blocks: safeBlocks,
     createdAt: now,
     updatedAt: now,
   };
@@ -675,11 +813,23 @@ export function updateRow(
     const sanitizedCells: Record<string, CellValue> = {};
     for (const [propId, val] of Object.entries(updates.cells)) {
       const propDef = db.properties[propId];
-      if (propDef && validateCellValue(val, propDef.type, propDef.options)) {
+      if (
+        propDef &&
+        propDef.type !== 'createdTime' &&
+        validateCellValue(val, propDef.type, propDef.options)
+      ) {
         sanitizedCells[propId] = val;
       }
     }
     nextCells = sanitizedCells;
+  }
+
+  let nextBlocks = existing.blocks;
+  if (updates.blocks !== undefined) {
+    nextBlocks =
+      Array.isArray(updates.blocks) && updates.blocks.length > 0
+        ? updates.blocks.map(normalizeBlock)
+        : [createDefaultParagraph()];
   }
 
   const updatedRow: DatabaseRow = {
@@ -688,6 +838,7 @@ export function updateRow(
     id: rowId,
     databaseId: db.id,
     cells: nextCells,
+    blocks: nextBlocks,
     updatedAt: Date.now(),
   };
 
@@ -698,6 +849,39 @@ export function updateRow(
       [rowId]: updatedRow,
     },
     updatedAt: Date.now(),
+  };
+}
+
+/**
+ * 不可变更新行正文块树 (Row as Page Blocks)
+ */
+export function updateRowBlocks(
+  db: DatabaseSchema,
+  rowId: string,
+  blocks: BlockNode[]
+): DatabaseSchema {
+  const existing = db.rows[rowId];
+  if (!existing) return db;
+
+  const safeBlocks =
+    Array.isArray(blocks) && blocks.length > 0
+      ? blocks.map(normalizeBlock)
+      : [createDefaultParagraph()];
+
+  const now = Date.now();
+  const updatedRow: DatabaseRow = {
+    ...existing,
+    blocks: safeBlocks,
+    updatedAt: now,
+  };
+
+  return {
+    ...db,
+    rows: {
+      ...db.rows,
+      [rowId]: updatedRow,
+    },
+    updatedAt: now,
   };
 }
 
@@ -714,6 +898,7 @@ export function updateCell(
   if (!row) return db;
   const propDef = db.properties[propertyId];
   if (!propDef) return db; // 属性不存在则忽略
+  if (propDef.type === 'createdTime') return db; // createdTime 为只读派生字段，禁止写入
   if (!validateCellValue(value, propDef.type, propDef.options)) return db; // 值形态非法或悬空 option 则忽略
 
   const now = Date.now();
@@ -794,6 +979,11 @@ export function migrateCellForTypeChange(
   if (val === null || val === undefined || val === '') {
     if (newType === 'checkbox') return false;
     if (newType === 'multiSelect') return [];
+    return null;
+  }
+
+  // createdTime 是只读派生字段，既不承载单元格数据，转换成它或从它转出均返回 null
+  if (oldType === 'createdTime' || newType === 'createdTime') {
     return null;
   }
 
@@ -899,8 +1089,34 @@ export function migrateCellForTypeChange(
       return Array.from(new Set(matchedIds));
     }
 
-    case 'date':
-    case 'url':
+    case 'date': {
+      if (typeof val === 'string') {
+        if (isValidDateString(val)) return val;
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const formatted = `${y}-${m}-${day}`;
+          if (isValidDateString(formatted)) return formatted;
+        }
+      } else if (typeof val === 'number' && Number.isFinite(val)) {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const formatted = `${y}-${m}-${day}`;
+          if (isValidDateString(formatted)) return formatted;
+        }
+      }
+      return null;
+    }
+
+    case 'url': {
+      return normalizeUrlString(val);
+    }
+
     case 'title':
     default:
       return String(val);

@@ -6,6 +6,9 @@ import { TextCellEditor } from './editors/TextCellEditor';
 import { NumberCellEditor } from './editors/NumberCellEditor';
 import { SelectCellEditor } from './editors/SelectCellEditor';
 import { MultiSelectCellEditor } from './editors/MultiSelectCellEditor';
+import { DateCellEditor } from './editors/DateCellEditor';
+import { UrlCellEditor } from './editors/UrlCellEditor';
+import { formatCreatedTime } from '../../../utils/databaseUtils';
 
 export interface TableCellProps {
   databaseId: string;
@@ -20,6 +23,7 @@ export interface TableCellProps {
   onStartEdit: (rowIndex: number, colIndex: number) => void;
   onStopEdit: () => void;
   onNavigate: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
+  onOpenRowDetail?: (rowId: string) => void;
 }
 
 export const TableCell: React.FC<TableCellProps> = ({
@@ -35,12 +39,16 @@ export const TableCell: React.FC<TableCellProps> = ({
   onStartEdit,
   onStopEdit,
   onNavigate,
+  onOpenRowDetail,
 }) => {
   const property = useWorkspaceStore(
     (state) => state.databases[databaseId]?.properties[propertyId]
   );
   const cellValue = useWorkspaceStore(
     (state) => state.databases[databaseId]?.rows[rowId]?.cells[propertyId]
+  );
+  const rowCreatedAt = useWorkspaceStore(
+    (state) => state.databases[databaseId]?.rows[rowId]?.createdAt
   );
   const updateDatabaseCell = useWorkspaceStore((state) => state.updateDatabaseCell);
   const addDatabaseSelectOption = useWorkspaceStore((state) => state.addDatabaseSelectOption);
@@ -52,7 +60,9 @@ export const TableCell: React.FC<TableCellProps> = ({
     property?.type === 'text' ||
     property?.type === 'number' ||
     property?.type === 'select' ||
-    property?.type === 'multiSelect';
+    property?.type === 'multiSelect' ||
+    property?.type === 'date' ||
+    property?.type === 'url';
 
   // 当聚焦但非编辑态时，确保单元格容器聚焦以支持键盘监听
   useEffect(() => {
@@ -171,6 +181,17 @@ export const TableCell: React.FC<TableCellProps> = ({
       );
     }
 
+    if (property?.type === 'createdTime') {
+      return (
+        <span
+          data-testid="db-created-time-cell"
+          className="text-text-muted-light dark:text-text-muted-dark font-mono text-[11px]"
+        >
+          {rowCreatedAt ? formatCreatedTime(rowCreatedAt) : '-'}
+        </span>
+      );
+    }
+
     if (cellValue === undefined || cellValue === null || cellValue === '') {
       return <span className="text-neutral-300 dark:text-neutral-600 select-none">-</span>;
     }
@@ -220,19 +241,63 @@ export const TableCell: React.FC<TableCellProps> = ({
         );
       }
 
-      case 'url':
+      case 'date':
         return (
-          <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline truncate">
-            <span className="truncate">{String(cellValue)}</span>
-            <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-70" />
+          <span
+            data-testid="db-date-cell-value"
+            className="text-text-primary-light dark:text-text-primary-dark"
+          >
+            {String(cellValue)}
           </span>
         );
+
+      case 'url': {
+        const urlStr = String(cellValue || '');
+        return (
+          <div className="flex items-center justify-between gap-1 w-full overflow-hidden group/url">
+            <span className="truncate text-blue-600 dark:text-blue-400 hover:underline">
+              {urlStr}
+            </span>
+            <a
+              href={urlStr}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="db-url-open-link"
+              onClick={(e) => e.stopPropagation()}
+              className="p-0.5 text-blue-500 hover:text-blue-700 opacity-60 hover:opacity-100 flex-shrink-0"
+              title="打开链接"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        );
+      }
 
       case 'number':
         return <span className="font-mono text-right w-full block">{String(cellValue)}</span>;
 
       case 'title':
-        return <span className="font-semibold text-text-primary-light dark:text-text-primary-dark truncate">{String(cellValue)}</span>;
+        return (
+          <div className="flex items-center justify-between w-full group/title">
+            <span className="font-semibold text-text-primary-light dark:text-text-primary-dark truncate">
+              {String(cellValue || '')}
+            </span>
+            {onOpenRowDetail && (
+              <button
+                type="button"
+                data-testid={`row-open-detail-${rowId}`}
+                aria-label={`打开行详情 ${String(cellValue || '')}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenRowDetail(rowId);
+                }}
+                className="opacity-0 group-hover/title:opacity-100 focus:opacity-100 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded flex-shrink-0 transition-opacity ml-1"
+              >
+                打开
+              </button>
+            )}
+          </div>
+        );
 
       case 'text':
       default:
@@ -242,6 +307,26 @@ export const TableCell: React.FC<TableCellProps> = ({
 
   const renderEditor = () => {
     switch (property?.type) {
+      case 'date':
+        return (
+          <DateCellEditor
+            value={typeof cellValue === 'string' ? cellValue : null}
+            onCommit={(val) => handleCommit(val)}
+            onCancel={onStopEdit}
+            onNavigate={onNavigate}
+          />
+        );
+
+      case 'url':
+        return (
+          <UrlCellEditor
+            value={typeof cellValue === 'string' ? cellValue : null}
+            onCommit={(val) => handleCommit(val)}
+            onCancel={onStopEdit}
+            onNavigate={onNavigate}
+          />
+        );
+
       case 'number':
         return (
           <NumberCellEditor

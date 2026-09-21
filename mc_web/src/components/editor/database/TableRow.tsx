@@ -14,6 +14,7 @@ export interface TableRowProps {
   onStartEdit: (rowIndex: number, colIndex: number) => void;
   onStopEdit: () => void;
   onNavigate: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
+  onOpenRowDetail?: (rowId: string) => void;
 }
 
 export const TableRow: React.FC<TableRowProps> = ({
@@ -27,6 +28,7 @@ export const TableRow: React.FC<TableRowProps> = ({
   onStartEdit,
   onStopEdit,
   onNavigate,
+  onOpenRowDetail,
 }) => {
   const row = useWorkspaceStore(
     (state) => state.databases[databaseId]?.rows[rowId]
@@ -69,6 +71,7 @@ export const TableRow: React.FC<TableRowProps> = ({
             onStartEdit={onStartEdit}
             onStopEdit={onStopEdit}
             onNavigate={onNavigate}
+            onOpenRowDetail={onOpenRowDetail}
           />
         );
       })}

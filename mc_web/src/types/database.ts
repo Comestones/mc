@@ -1,3 +1,5 @@
+import type { BlockNode } from './document';
+
 /**
  * 多维数据库属性类型枚举定义
  */
@@ -10,6 +12,7 @@ export const VALID_PROPERTY_TYPES = [
   'checkbox',    // 勾选框
   'date',        // 日期
   'url',         // 超链接
+  'createdTime', // 创建时间（只读元数据派生字段）
 ] as const;
 
 export type PropertyType = (typeof VALID_PROPERTY_TYPES)[number];
@@ -90,6 +93,7 @@ export interface DatabaseRow {
   cells: Record<string, CellValue>;
   createdAt: number;
   updatedAt: number;
+  blocks?: BlockNode[]; // Day 11: Row as Page 正文块列表
 }
 
 /**

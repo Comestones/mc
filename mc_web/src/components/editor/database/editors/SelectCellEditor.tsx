@@ -7,7 +7,7 @@ export interface SelectCellEditorProps {
   options: SelectOption[];
   onCommit: (val: string | null) => void;
   onCancel: () => void;
-  onNavigate: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
+  onNavigate?: (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => void;
   onCreateOption?: (name: string) => SelectOption | Promise<SelectOption>;
 }
 
@@ -108,7 +108,7 @@ export const SelectCellEditor: React.FC<SelectCellEditorProps> = ({
       e.preventDefault();
       e.stopPropagation();
       onCancel();
-      onNavigate(e.shiftKey ? 'prev' : 'next');
+      onNavigate?.(e.shiftKey ? 'prev' : 'next');
     }
   };
 
