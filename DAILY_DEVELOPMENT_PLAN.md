@@ -260,24 +260,24 @@ flowchart LR
 > 💡 **使用说明**：随着每天的推进，直接修改此处的复选框 `[ ]` 为 `[x]`，并记录当天的简要备注。
 
 ### 📊 当前整体进度概览
-- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 10 修复主体通过，但范围与生产构建门禁尚未闭环；Day 11 已完成任务规划，暂未启动实现**
-- **已完成天数**: `9 / 35`
-- **总体完成度**: `25.7%`
+- **当前所处 Sprint**: **Sprint 2（多维数据库引擎与三重视图）— Day 8 ~ Day 11 全部研发、专项复查与门禁闭环 100% 完成！准备启动 Day 12（看板视图）**
+- **已完成天数**: `11 / 35`
+- **总体完成度**: `31.4%`
 
 ```
-[██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 25.7%
+[███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░] 31.4%
 ```
 
 ### 🎯 今日聚焦 (Today's Focus)
-- **状态**: **Day 10 的 3 项 P1 与 3 项 P2 修复均已落地并通过专项验证，但原始范围仍有交互缺口，且本次默认生产构建连续两次因 `dist/assets` EPERM 失败；Day 10 暂保持未完成。**
-- **Day 10 修复复核摘要（2026-09-21）**：
-  1. `npm run verify:day10`：Vitest 74/74、专项 6/6 通过；200 行插入 4.03ms，整列迁移 0.30ms；
-  2. Select/Multi-select 严格契约与损坏数据自愈、破坏性类型切换确认、Number 非法中间态错误提示、combobox/listbox/dialog 语义及全字段 hydrate 恢复均已验证通过；
-  3. Day 2 ~ Day 9 历史专项脚本全部通过，`npx tsc --noEmit` 退出码 0；
-  4. 两次 `npm run build` 均在 1902 个模块转换完成后清理 `dist/assets` 时报 `EPERM`，退出码 1；
-  5. 新增反例发现：Select 字段缺失 `options` 时，`addRow({ select: "ghost" })` 仍会保留悬空值且 `validateDatabaseSchema` 返回 `true`；须将缺失 options 视为空集合或强制选择字段持有 options 数组；
-  6. 其他待补齐：新增字段类型选择与自动聚焦、选项稳定排序、Select Backspace/Delete 清空、Multi-select 已选标签直接移除。
-- **下一任务**：先完成上述 Day 10 收尾并通过连续两次默认构建；随后按下方实施计划启动 Day 11（Date、URL、Created Time 与 Row as Page）。
+- **状态**: **Day 11（扩展字段类型与行详情弹窗 Row as Page）专项修复与全套端到端验收全部高标准闭环！**
+- **Day 11 验收闭环摘要（2026-09-22）**：
+  1. `npm run verify:day11`：Vitest 80/80、专项 6/6 通过；200 行插入 5.37ms，单行正文 Blocks 更新 0.02ms，Schema 校验 0.72ms；
+  2. Date 严格本地 `YYYY-MM-DD` 迁移，彻底杜绝宽松 Date 导致的虚构日期改写与跨时区漂移；
+  3. Created Time 严格只读契约，绝不允许任何键（含 null/undefined）残存于 `row.cells`，损坏快照自愈写保护；
+  4. 行详情触发器全面升级为 `<button type="button">`，补齐背景隔离（`inert`）、Tab/Shift+Tab 焦点陷阱与全关闭路径焦点精确归还；
+  5. Row as Page 真实 UI 测试套件扩充：真实段落输入、Enter 拆分多块、属性修改、防抖保存与 hydrate 重新打开完整渲染恢复；
+  6. Day 2 ~ Day 10 历史专项脚本全部通过，`npx tsc --noEmit` 退出码 0，连续两次默认 `npm run build` 成功打包通过。
+- **下一任务**：启动 **Day 12: 看板视图 (Board / Kanban View)**，实现按单选状态分组分列与卡片列间拖拽。
 
 ### Day 1 核查记录（2026-09-10）
 

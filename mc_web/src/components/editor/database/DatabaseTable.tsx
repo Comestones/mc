@@ -141,11 +141,13 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
   };
 
   return (
-    <div
-      role="region"
-      aria-label="数据表格"
-      className="relative w-full overflow-x-auto overflow-y-auto max-h-[600px] border-t border-border-light dark:border-border-dark"
-    >
+    <>
+      <div
+        role="region"
+        aria-label="数据表格"
+        data-testid="database-table-container"
+        className="relative w-full overflow-x-auto overflow-y-auto max-h-[600px] border-t border-border-light dark:border-border-dark"
+      >
       <table
         role="grid"
         aria-label="多维数据库表格"
@@ -225,6 +227,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
           </button>
         </div>
       )}
+      </div>
 
       {/* 行详情弹窗 (Row as Page) */}
       {activeDetailRowId && (
@@ -238,11 +241,25 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
               const trigger = document.querySelector(
                 `[data-testid="row-open-detail-${lastRowId}"]`
               ) as HTMLElement | null;
-              trigger?.focus();
+              if (trigger) {
+                trigger.focus();
+              } else {
+                const nextTrigger = document.querySelector(
+                  '[data-testid^="row-open-detail-"]'
+                ) as HTMLElement | null;
+                if (nextTrigger) {
+                  nextTrigger.focus();
+                } else {
+                  const addRowBtn = document.querySelector(
+                    '[data-testid="table-bottom-add-row-btn"]'
+                  ) as HTMLElement | null;
+                  addRowBtn?.focus();
+                }
+              }
             }, 0);
           }}
         />
       )}
-    </div>
+    </>
   );
 };

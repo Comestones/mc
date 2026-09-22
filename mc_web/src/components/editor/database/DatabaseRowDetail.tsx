@@ -27,6 +27,7 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
   const deleteDatabaseRow = useWorkspaceStore((state) => state.deleteDatabaseRow);
   const addDatabaseSelectOption = useWorkspaceStore((state) => state.addDatabaseSelectOption);
 
+  const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [editingPropId, setEditingPropId] = useState<string | null>(null);
@@ -37,6 +38,41 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
     'prop-title';
 
   const titleValue = String(row?.cells[titlePropId] || '');
+
+  // 背景隔离：给背景元素设置 inert 并在卸载时移除
+  useEffect(() => {
+    const dialogOverlay = overlayRef.current;
+    const isolatedElements: HTMLElement[] = [];
+
+    // 1. 查找外部的表格容器设置 inert
+    const tableContainers = document.querySelectorAll<HTMLElement>(
+      '[data-testid="database-table-container"], [data-testid="database-table"]'
+    );
+    tableContainers.forEach((el) => {
+      if (!el.contains(dialogOverlay) && !el.hasAttribute('inert')) {
+        el.setAttribute('inert', '');
+        isolatedElements.push(el);
+      }
+    });
+
+    // 2. 隔离 overlay 的兄弟节点（若其渲染在某个容器内部）
+    if (dialogOverlay?.parentElement) {
+      Array.from(dialogOverlay.parentElement.children).forEach((child) => {
+        if (child !== dialogOverlay && child instanceof HTMLElement) {
+          if (!child.hasAttribute('inert')) {
+            child.setAttribute('inert', '');
+            isolatedElements.push(child);
+          }
+        }
+      });
+    }
+
+    return () => {
+      isolatedElements.forEach((el) => {
+        el.removeAttribute('inert');
+      });
+    };
+  }, []);
 
   // 键盘 Escape 退出与焦点陷阱
   useEffect(() => {
@@ -54,7 +90,7 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
       // Tab 焦点循环锁定在 dialog 内部
       if (e.key === 'Tab' && dialogRef.current) {
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         );
         if (focusables.length === 0) return;
 
@@ -62,12 +98,12 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
         const lastElement = focusables[focusables.length - 1];
 
         if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
+          if (document.activeElement === firstElement || !dialogRef.current.contains(document.activeElement)) {
             e.preventDefault();
             lastElement.focus();
           }
         } else {
-          if (document.activeElement === lastElement) {
+          if (document.activeElement === lastElement || !dialogRef.current.contains(document.activeElement)) {
             e.preventDefault();
             firstElement.focus();
           }
@@ -104,6 +140,7 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
 
   return (
     <div
+      ref={overlayRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="row-detail-title"
@@ -244,13 +281,15 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                       );
                     }
                     return (
-                      <div
+                      <button
+                        type="button"
                         data-testid={`row-detail-date-${propId}`}
                         onClick={() => setEditingPropId(propId)}
-                        className="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/60 px-2 py-1 rounded w-fit text-text-primary-light dark:text-text-primary-dark"
+                        aria-label={`编辑日期 ${prop.name}`}
+                        className="cursor-pointer text-left hover:bg-neutral-100 dark:hover:bg-neutral-800/60 px-2 py-1 rounded w-fit text-text-primary-light dark:text-text-primary-dark focus:outline-none focus:ring-1 focus:ring-blue-500"
                       >
                         {cellVal ? String(cellVal) : <span className="text-text-muted-light dark:text-text-muted-dark italic">空日期</span>}
-                      </div>
+                      </button>
                     );
                   }
 
@@ -271,20 +310,23 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                     }
                     return (
                       <div className="flex items-center gap-2 group">
-                        <span
+                        <button
+                          type="button"
                           data-testid={`row-detail-url-${propId}`}
                           onClick={() => setEditingPropId(propId)}
-                          className="cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800/60 px-2 py-1 rounded text-blue-600 dark:text-blue-400 truncate max-w-sm"
+                          aria-label={`编辑链接 ${prop.name}`}
+                          className="cursor-pointer text-left hover:bg-neutral-100 dark:hover:bg-neutral-800/60 px-2 py-1 rounded text-blue-600 dark:text-blue-400 truncate max-w-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                         >
                           {cellVal ? String(cellVal) : <span className="text-text-muted-light dark:text-text-muted-dark italic">空链接</span>}
-                        </span>
+                        </button>
                         {cellVal ? (
                           <a
                             href={String(cellVal)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-text-muted-light hover:text-blue-600 dark:hover:text-blue-400 p-1 rounded"
+                            className="text-text-muted-light hover:text-blue-600 dark:hover:text-blue-400 p-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                             title="在新窗口打开"
+                            aria-label="在新窗口打开链接"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -296,10 +338,12 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                   if (prop.type === 'select') {
                     return (
                       <div className="relative w-fit">
-                        <div
+                        <button
+                          type="button"
                           data-testid={`row-detail-select-${propId}`}
                           onClick={() => setEditingPropId(propId)}
-                          className="cursor-pointer"
+                          aria-label={`编辑单选 ${prop.name}`}
+                          className="cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
                         >
                           {cellVal ? (
                             (() => {
@@ -320,11 +364,11 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                               );
                             })()
                           ) : (
-                            <span className="text-text-muted-light dark:text-text-muted-dark italic hover:bg-neutral-100 dark:hover:bg-neutral-800 px-2 py-1 rounded">
+                            <span className="text-text-muted-light dark:text-text-muted-dark italic hover:bg-neutral-100 dark:hover:bg-neutral-800 px-2 py-1 rounded inline-block">
                               空标签
                             </span>
                           )}
-                        </div>
+                        </button>
 
                         {editingPropId === propId && (
                           <SelectCellEditor
@@ -346,10 +390,12 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                     const values = Array.isArray(cellVal) ? cellVal : [];
                     return (
                       <div className="relative w-fit">
-                        <div
+                        <button
+                          type="button"
                           data-testid={`row-detail-multiselect-${propId}`}
                           onClick={() => setEditingPropId(propId)}
-                          className="cursor-pointer flex flex-wrap gap-1 items-center"
+                          aria-label={`编辑多选 ${prop.name}`}
+                          className="cursor-pointer text-left flex flex-wrap gap-1 items-center focus:outline-none focus:ring-1 focus:ring-blue-500 rounded p-0.5"
                         >
                           {values.length > 0 ? (
                             values.map((v, i) => {
@@ -371,11 +417,11 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
                               );
                             })
                           ) : (
-                            <span className="text-text-muted-light dark:text-text-muted-dark italic hover:bg-neutral-100 dark:hover:bg-neutral-800 px-2 py-1 rounded">
+                            <span className="text-text-muted-light dark:text-text-muted-dark italic hover:bg-neutral-100 dark:hover:bg-neutral-800 px-2 py-1 rounded inline-block">
                               空多选
                             </span>
                           )}
-                        </div>
+                        </button>
 
                         {editingPropId === propId && (
                           <MultiSelectCellEditor

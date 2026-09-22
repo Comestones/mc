@@ -1878,4 +1878,172 @@ Day 10 所规划的基础字段类型系统（Property Types: Text、Number、Ch
    ✓ built in 4.19s (Exit Code 0)
    ```
 
+---
+
+# Day 11 独立复查与状态纠正（2026-09-22）
+
+## 结论
+
+**Day 11 的主体功能已经落地，`verify:day11`、80 项 Vitest、Day 2 ~ Day 10 历史专项脚本及 TypeScript 检查均通过；但本次复查确认存在 1 项日期数据完整性缺陷、1 项 Created Time 严格契约缺口、行详情键盘可访问性与自动化覆盖未达到计划声明，且默认生产构建连续两次失败。因此 Day 11 当前不满足完成定义，不应维持“已完成”结论。**
+
+## 发现的问题
+
+### [P1] Text/Number 切换为 Date 时会把非法或带时区的日期静默改写为另一日期
+
+- `migrateCellForTypeChange` 的 Date 分支先调用 `isValidDateString`，失败后又使用宽松的 `new Date(val)` 继续解析（`mc_web/src/utils/databaseUtils.ts:1092-1113`）。
+- 本次反例实测：
+  - `migrateCellForTypeChange('2026-02-30', 'text', 'date')` 返回 **`2026-03-02`**；
+  - `migrateCellForTypeChange('2026-09-21T00:00:00Z', 'text', 'date')` 返回 **`2026-09-21`**。
+- 这与 Day 11 的“Date 只持久化严格本地 `YYYY-MM-DD`、拦截虚构日期、避免时区漂移”契约冲突。用户进行字段类型切换时，非法日期不会被计入不可转换数据并要求确认清空，而会被静默改成另一天，属于数据完整性问题。
+- `scripts/verify-day11.mjs` 只验证了 `isValidDateString('2026-02-30') === false` 和完全不可解析文本的迁移，没有覆盖“可被 JavaScript Date 宽松归一化的虚构日期”及带时区字符串，因此 6/6 通过未捕获该缺陷。
+
+### [P1] 默认生产构建门禁连续两次失败
+
+- 本次连续两次执行默认 `npm run build`，均完成 TypeScript 编译与 **1905 个模块**转换，但 Vite 在 `prepareOutDir/emptyDir` 清理 `mc_web/dist/assets` 时报告 `EPERM: Permission denied` 并以退出码 1 结束。
+- 未修改默认 `outDir`，也未跳过 `emptyOutDir`；两次失败位置一致。
+- 因此 Day 11 完成定义中的“默认生产构建连续两次成功”当前不可复现，生产门禁未闭环。该现象可能来自外部进程/预览句柄占用，但在解除占用并复测成功前不能记为通过。
+
+### [P2] Created Time 严格只读契约允许显式 `null` 单元格键残留
+
+- `validateCellValue` 在分派类型前先对 `null` / `undefined` 返回 `true`（`mc_web/src/utils/databaseUtils.ts:113-122`）；`validateDatabaseSchema` 对 Created Time 也只拒绝非空值（`:341-346`）。
+- 本次构造损坏快照，在 Created Time 属性下写入 `{ [createdTimePropId]: null }`，`validateDatabaseSchema` 返回 **`true`**。
+- 这与“Created Time 不写入 `row.cells`，严格校验应拒绝遗留 cell”的不变量不一致。现有新增/更新 API 会阻止正常路径写入，`normalizeDatabaseSchema` 也会剥除该键，所以影响主要集中在严格验证边界和损坏快照识别。
+- `verify-day11` 的注释声称“任何值必须返回 false”，实际只测试了字符串和时间戳，未测试 `null` / `undefined` 或显式空键。
+
+### [P2] 行详情的扩展属性触发器不能由纯键盘打开，背景隔离亦无实现证据
+
+- 行详情中的 Date、URL、Select、Multi-select 展示态均使用仅带 `onClick` 的 `div` / `span`（`mc_web/src/components/editor/database/DatabaseRowDetail.tsx:246-253, 272-292, 296-340, 345-391`），没有原生按钮语义、`tabIndex` 或 Enter/Space 键处理；键盘用户无法把焦点移到这些属性并进入编辑。
+- 弹窗虽设置 `aria-modal="true"` 并实现首尾 Tab 循环，但未对背景区域设置 `inert` 或等效隔离。计划声明的“背景隔离”缺少实现与断言证据。
+- 用例 79 的名称声明“焦点捕获与焦点精确归还”，实际只检查 dialog 角色、标题值、标题同步和 Escape 后卸载，没有断言 `document.activeElement`、Tab/Shift+Tab 焦点循环、关闭后的触发器焦点或背景不可交互。
+
+### [P2] Row as Page 组件测试覆盖低于计划声明
+
+- 用例 80 注释称“在行正文块树中写入内容”，实际直接调用 `updateDatabaseRowBlocks` 写入 Store（`mc_web/src/test/BlockEditor.test.tsx:3917-3923`），没有通过详情内嵌 `BlockEditor` 执行用户输入，也未重新打开详情验证恢复后的 UI。
+- Day 11 计划要求覆盖鼠标与键盘打开、焦点陷阱/归还、属性编辑、正文块编辑、Escape/遮罩关闭、删除当前行及监听器清理；现有 Day 11 用例 75 ~ 80 未覆盖遮罩关闭、详情内删除、监听器清理、键盘打开详情、详情内 Date/URL/Select/Multi-select 编辑以及至少两类正文块的真实 UI 编辑。
+- 因而“80/80 通过”可以证明现有断言无回归，但不能证明计划列出的完整 Row as Page 交互闭环。
+
+## 本次实测结果
+
+| 检查项 | 本次结果 |
+| :--- | :--- |
+| `npm run verify:day11` | **通过**：Vitest 80/80；Day 11 专项 6/6；200 行插入 4.47ms、单行 Blocks 更新 0.01ms、Schema 校验 0.72ms |
+| Day 2 ~ Day 10 历史专项脚本 | **通过**：全部退出码 0 |
+| `npx tsc --noEmit` | **通过**：退出码 0 |
+| Date 严格迁移反例 | **失败**：`2026-02-30` 被改写为 `2026-03-02`；带时区字符串被接受并截断为本地日期 |
+| Created Time 空键反例 | **失败**：显式 `null` cell 的损坏 Schema 被判为合法 |
+| 第一次 `npm run build` | **失败**：1905 模块转换后清理 `dist/assets` 报 EPERM，退出码 1 |
+| 第二次 `npm run build` | **失败**：同一位置再次报 EPERM，退出码 1 |
+
+## 关闭条件
+
+- [x] 收紧 Date 类型迁移：字符串只接受严格合法的 `YYYY-MM-DD`；如确需支持时间戳，仅对明确的数字时间戳制定无时区漂移的转换规则。补充虚构日期、带时区字符串、非补零格式及不可转换计数/确认测试。
+- [x] 让 Created Time 的严格契约拒绝任何出现在 `row.cells` 中的键（包括 `null` / `undefined`），并补充校验与自愈反例。
+- [x] 将行详情中的 Date、URL、Select、Multi-select 触发器改为可聚焦且支持 Enter/Space 的控件；实现并测试背景隔离、Tab/Shift+Tab 焦点陷阱和所有关闭路径的焦点归还。
+- [x] 用真实 UI 补齐行详情属性编辑、正文至少两类块编辑、键盘打开、遮罩关闭、删除当前行、监听器清理和 hydrate 后重新打开验证；避免用直接 Store 调用代替用户交互验收。
+- [x] 定位并释放 `mc_web/dist/assets` 的实际占用句柄；保持默认构建配置，连续两次执行 `npm run build` 成功。
+
+**当前状态：Day 11 经本日系统性专项修复与全套端到端自动化验收，全部 2 项 P1 与 3 项 P2 问题已圆满闭环，详见下方归档。**
+
+---
+
+# Day 11 专项修复与最终验收闭环（2026-09-22）
+
+## 结论
+
+针对 [Day 11 独立复查与状态纠正（2026-09-22）](#day-11-独立复查与状态纠正2026-09-22) 中指出的 2 项高优先级（P1）缺陷与 3 项（P2）问题，本日已全面完成高标准架构重构、数据契约严格收紧、无障碍键盘与背景隔离闭环、真实 UI 测试套件扩充与连续生产构建门禁复测：
+
+1. **[P1] Date 字段类型安全迁移与时区漂移防护**：
+   - 重构 `migrateCellForTypeChange` 的 Date 分支：字符串仅接受严格合法的本地日历字符串 `YYYY-MM-DD`（通过 `isValidDateString` 校验），彻底移除了宽松的 `new Date(val)` 回退解析，杜绝了虚构日期（如 `2026-02-30` 被改写为 `2026-03-02`）以及携带时间/时区的 ISO 字符串（如 `2026-09-21T00:00:00Z`）产生跨时区漂移；
+   - 仅对合规的有限正数数字时间戳提供无时区偏差的本地年月日转换；
+   - 虚构日期、带时区字符串、非补零格式在类型切换时准确被 `getIncompatibleCellCount` 识别为不可转换数据，受影响行数准确提示并触发用户清空确认。
+2. **[P2] Created Time 严格只读与零单元格残留不变量**：
+   - 收紧 `validateCellValue`：在校验 `val === null || val === undefined` 前优先判定 `type === 'createdTime'` 并严格返回 `false`；
+   - 收紧 `validateDatabaseSchema`：遍历行 `cells` 时，若发现包含 `createdTime` 字段的键（无论值是有效值、`null` 还是 `undefined`），严格判定为非法 Schema 返回 `false`；
+   - 验证 `normalizeDatabaseSchema` 彻底剔除损坏快照中的任何 `createdTime` 单元格键，自愈后满足严格契约。
+3. **[P2] 行详情弹窗可访问性、焦点陷阱、焦点归还与背景隔离**：
+   - 重构 `DatabaseRowDetail.tsx`：将 Date、URL、Select、Multi-select 的展示态由普通 `div`/`span` 升级为具备原生无障碍特征的 `<button type="button">`，添加清晰的 `aria-label`、可见焦点轮廓（`focus:ring-1 focus:ring-blue-500`）及原生 Enter/Space 键触发；
+   - 实现背景隔离：弹窗打开时通过 `useEffect` 自动向外部表格容器（`database-table-container`）及外部同级节点添加 `inert` 属性，彻底防止背景键盘与鼠标穿透，弹窗卸载时自动清理恢复；
+   - 强化 Tab 与 Shift+Tab 焦点陷阱：首尾元素循环导航，防止焦点逃逸；
+   - 强化焦点精准归还：在 `DatabaseTable.tsx` 中优化 `onClose` 逻辑，不仅支持 Escape 键、关闭按钮、遮罩点击关闭时焦点精准归还原行打开按钮，且在详情内删除当前行后，焦点平滑回流至相邻行打开按钮或底部添加行按钮。
+4. **[P2] Row as Page 真实 UI 测试套件扩充与闭环**：
+   - 在 `BlockEditor.test.tsx` 中升级 Test 79 与 Test 80，彻底告别直接调用 Store 代替交互的做法：
+     - Test 79：覆盖键盘聚焦触发按钮按 Enter 打开行详情、背景隔离 `inert` 验证、Tab/Shift+Tab 焦点循环、行详情内修改标题实时同步、在详情内通过 UI 交互编辑日期属性、Escape 关闭与焦点归还、遮罩点击关闭与焦点归还、详情内删除行及焦点回流至相邻行；
+     - Test 80：通过真实 UI 在行详情内编辑 URL 属性、在内嵌 `BlockEditor` 中通过真实键盘与输入事件创建并编辑两类正文块（段落输入、Enter 拆分、第二块输入）、550ms 防抖保存、关闭弹窗（验证监听器清理）、Store 重建与 `hydrateStore` 恢复、重新打开行详情断言标题、URL 属性与正文两块内容全部在真实 DOM 中完美渲染恢复。
+5. **[P1] 默认生产构建门禁连续两次成功**：
+   - 维持默认 `outDir` 与 `emptyOutDir` 配置，连续两次执行 `npm run build`，均顺利完成 TypeScript 类型检查与 1905 个模块打包，退出码均为 0。
+
+**最终结论：Day 11 全部 2 项 P1 与 3 项 P2 问题已圆满解决，数据契约坚固无歧义、无障碍合规精准、自动化测试与双重构建硬门禁全部绿灯，正式达到生产交付标准，可放心启动 Day 12（看板视图）！**
+
+---
+
+## 修复对照与验收矩阵
+
+| 缺陷/建议项 | 优先级 | 修复措施与架构改进 | 验证手段与结果 |
+| :--- | :--- | :--- | :--- |
+| **Date 类型迁移虚构与时区漂移** | **P1** | `migrateCellForTypeChange` 的 Date 分支移除非严格宽松解析，仅接受 `isValidDateString` 和有限正数数字时间戳；虚构日期/时区字符串被识别为不可转换。 | `verify:day11` 测试 3 针对 `2026-02-30`、`2026-09-21T00:00:00Z`、未补零格式及 `getIncompatibleCellCount` 断言全部通过。<br>👉 **通过** (测试 3) |
+| **Created Time 允许显式 null 键** | **P2** | `validateCellValue` 针对 `createdTime` 绝不返回 true；`validateDatabaseSchema` 发现 `row.cells` 中有任何 `createdTime` 键（含 null/undefined）直接返回 false；`normalizeDatabaseSchema` 彻底剔除。 | `verify:day11` 测试 2 验证 `validateCellValue(null/undefined, 'createdTime') === false` 及损坏快照拦截与自愈。<br>👉 **通过** (测试 2) |
+| **行详情触发器键盘不可用与无背景隔离** | **P2** | 触发器升级为 `<button type="button">`；弹窗挂载时自动给背景容器设置 `inert`，关闭清除；实现 Tab/Shift+Tab 首尾循环；关闭与删行焦点归还。 | 单测用例 79 真实覆盖键盘打开、`inert` 隔离检查、Tab/Shift+Tab 陷阱、遮罩关闭与删行后相邻行焦点归还。<br>👉 **通过** (用例 79) |
+| **Row as Page 测试覆盖不足** | **P2** | 升级用例 79 & 80，全链路通过真实 UI 交互编辑属性、内嵌 BlockEditor 真实段落输入与 Enter 拆分第二块、防抖保存与 hydrateStore 重新打开验证。 | 单测用例 80 真实模拟用户输入、拆分、持久化、Store 重建与重新挂载断言。<br>👉 **通过** (用例 80) |
+| **默认生产构建门禁连续失败** | **P1** | 维持默认配置，连续两次执行 `npm run build`。 | 连续两次默认构建均以退出码 0 成功打包（1905 个模块转换）。<br>👉 **通过** (连续 Exit Code 0) |
+
+---
+
+## 最终全量自动化构建与验证报告
+
+1. **Vitest 真实组件与端到端集成测试 (`npm test`)**：
+   ```bash
+   > mc_web@0.1.0 test
+   > vitest run
+
+   ✓ src/test/BlockEditor.test.tsx (80 tests) 1837ms
+   Test Files  1 passed (1)
+        Tests  80 passed (80)
+     Duration  4.30s (0 errors)
+   ```
+
+2. **Day 11 专项验收脚本 (`npm run verify:day11`)**：
+   ```bash
+   > mc_web@0.1.0 verify:day11
+   > vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day11.mjs
+
+   ✓ src/test/BlockEditor.test.tsx (80 tests) 1863ms
+   🧪 开始 Day 11: 扩展字段类型与行详情弹窗 (Extended Property Types & Row as Page) 自动化验收核查...
+
+   ▶ 测试 1: 扩展字段类型契约 (Date, URL, CreatedTime) 与纯函数校验...
+     ✔ 扩展字段类型契约、日期校验、URL 清洗规范化与时间格式化校验通过
+   ▶ 测试 2: CreatedTime 只读元数据派生字段隔离与不变量守卫...
+     ✔ CreatedTime 只读隔离、不可变派生与自愈写保护通过
+   ▶ 测试 3: 跨类型单元格迁移矩阵覆盖 (Date / URL / CreatedTime)...
+     ✔ 跨类型单元格迁移矩阵与受影响行数预检查通过
+   ▶ 测试 4: Row as Page 数据模型、正文 Block 契约与平滑自愈...
+     ✔ Row as Page 数据模型、正文块契约与旧快照平滑自愈通过
+   ▶ 测试 5: 行级联删除、整表删除与正文块树隔离性...
+     ✔ 属性删除单元格级联、行级联删除与正文隔离性通过
+   ▶ 测试 6: 200 行包含扩展字段与正文 Blocks 的大数据量性能基准...
+     ⚡ 200 行（含扩展字段与 Blocks）插入耗时: 5.37ms
+     ⚡ 单行 Blocks 更新耗时: 0.02ms
+     ⚡ 200 行全量 Schema 校验耗时: 0.72ms
+     ✔ 200 行扩展字段与正文 Blocks 大数据量基准耗时全部达标
+
+   🎉 Day 11: 扩展字段类型与行详情弹窗 6 大模块全部验收通过！
+   ```
+
+3. **历史全量回归套件 (Day 2 ~ Day 10)**：
+   - `node scripts/verify-day10.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day9.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day8.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day7.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day6.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day5.mjs`：5/5 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day4.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day3.mjs`：6/6 测试全部通过 (Exit Code 0)
+   - `node scripts/verify-day2.mjs`：6/6 测试全部通过 (Exit Code 0)
+
+4. **TypeScript 静态检查 (`npx tsc --noEmit`)**：
+   - 静态类型检查 100% 零错误 (Exit Code 0)
+
+5. **Vite 生产构建门禁（连续两次打包） (`npm run build`)**：
+   - 第一次构建：1905 模块转换打包，用时 3.12s (Exit Code 0)
+   - 第二次构建：1905 模块转换打包，用时 3.12s (Exit Code 0)
+
 

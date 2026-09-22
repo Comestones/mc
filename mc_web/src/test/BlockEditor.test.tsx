@@ -3820,17 +3820,22 @@ describe('BlockEditor Component & Store Integration', () => {
     expect(screen.queryByTestId('add-column-type-menu')).not.toBeInTheDocument();
   });
 
-  it('79. [Day 11] Row as Page：打开详情弹窗、焦点捕获与 Escape 退出、焦点精确归还与主标题/属性实时双向同步', () => {
+  it('79. [Day 11] Row as Page：打开详情弹窗、键盘打开与焦点陷阱、背景隔离、遮罩与删除关闭焦点归还、主标题/属性实时双向同步', () => {
     const dbId = useWorkspaceStore.getState().createDatabase('RowAsPage测试表');
     const titlePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[0];
     useWorkspaceStore.getState().addDatabaseProperty(dbId, { name: '计划日期', type: 'date' });
     const datePropId = useWorkspaceStore.getState().databases[dbId].propertyOrder[1];
 
     useWorkspaceStore.getState().addDatabaseRow(dbId, {
-      [titlePropId]: '功能演练行',
+      [titlePropId]: '功能演练行 1',
       [datePropId]: '2026-09-25',
     });
-    const rowId = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    useWorkspaceStore.getState().addDatabaseRow(dbId, {
+      [titlePropId]: '功能演练行 2',
+      [datePropId]: '2026-09-26',
+    });
+    const rowId1 = useWorkspaceStore.getState().databases[dbId].rowOrder[0];
+    const rowId2 = useWorkspaceStore.getState().databases[dbId].rowOrder[1];
 
     const docId = 'doc-db-day11-row-detail';
     registerTestDoc(docId, [
@@ -3844,36 +3849,115 @@ describe('BlockEditor Component & Store Integration', () => {
 
     render(<BlockEditor documentId={docId} initialBlocks={getDocBlocks(docId)} />);
 
-    // 1. 点击行标题单元格中的 "打开" 按钮
-    const openBtn = screen.getByTestId(`row-open-detail-${rowId}`);
-    expect(openBtn).toBeInTheDocument();
+    const tableContainer = screen.getByTestId('database-table-container');
+    expect(tableContainer).not.toHaveAttribute('inert');
+
+    // 1. 键盘聚焦行标题中的 "打开" 按钮并触发 Enter
+    const openBtn1 = screen.getByTestId(`row-open-detail-${rowId1}`);
+    expect(openBtn1).toBeInTheDocument();
     act(() => {
-      fireEvent.click(openBtn);
+      openBtn1.focus();
+      fireEvent.keyDown(openBtn1, { key: 'Enter' });
+      fireEvent.click(openBtn1);
     });
 
-    // 2. 详情弹窗挂载，role="dialog"，并且标题输入框自动获得焦点
+    // 2. 详情弹窗挂载，role="dialog"，背景表格容器被标记为 inert 隔离
     const dialog = screen.getByTestId('database-row-detail-dialog');
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveAttribute('role', 'dialog');
+    expect(tableContainer).toHaveAttribute('inert');
+
+    // 3. 初始焦点聚焦到行标题输入框
     const titleInput = screen.getByTestId('row-detail-title-input');
-    expect(titleInput).toHaveValue('功能演练行');
+    expect(titleInput).toHaveValue('功能演练行 1');
+    expect(document.activeElement).toBe(titleInput);
 
-    // 3. 在详情弹窗中修改标题，表格单元格与 Store 实时双向同步
+    // 4. Tab 与 Shift+Tab 焦点陷阱循环
+    const focusables = dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusables[0];
+    const lastElement = focusables[focusables.length - 1];
+
+    // 从第一个元素按 Shift+Tab，循环跳转至最后一个元素
     act(() => {
-      fireEvent.change(titleInput, { target: { value: '功能演练行 (已更名)' } });
+      firstElement.focus();
+      fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
     });
-    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[titlePropId]).toBe('功能演练行 (已更名)');
+    expect(document.activeElement).toBe(lastElement);
 
-    // 4. 按 Escape 键安全关闭弹窗
+    // 从最后一个元素按 Tab，循环跳转至第一个元素
+    act(() => {
+      lastElement.focus();
+      fireEvent.keyDown(dialog, { key: 'Tab' });
+    });
+    expect(document.activeElement).toBe(firstElement);
+
+    // 5. 在详情弹窗中修改标题，实时双向同步
+    act(() => {
+      fireEvent.change(titleInput, { target: { value: '功能演练行 1 (已更名)' } });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId1].cells[titlePropId]).toBe('功能演练行 1 (已更名)');
+
+    // 6. 在详情弹窗中通过键盘/按钮交互编辑日期属性
+    const dateBtn = screen.getByTestId(`row-detail-date-${datePropId}`);
+    expect(dateBtn).toHaveAttribute('type', 'button');
+    act(() => {
+      fireEvent.click(dateBtn);
+    });
+    const dateInput = screen.getByTestId('db-cell-input');
+    act(() => {
+      fireEvent.change(dateInput, { target: { value: '2026-10-05' } });
+      fireEvent.keyDown(dateInput, { key: 'Enter' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId1].cells[datePropId]).toBe('2026-10-05');
+
+    // 7. 按 Escape 键安全关闭弹窗，背景 inert 移除，焦点精确归还给打开按钮
     act(() => {
       fireEvent.keyDown(dialog, { key: 'Escape' });
     });
     expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
-    // 表格中的标题显示已更名后的最新文本
-    expect(screen.getByTestId('db-cell-0-0')).toHaveTextContent('功能演练行 (已更名)');
+    expect(tableContainer).not.toHaveAttribute('inert');
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(document.activeElement).toBe(screen.getByTestId(`row-open-detail-${rowId1}`));
+
+    // 8. 遮罩点击关闭测试与焦点归还
+    act(() => {
+      fireEvent.click(screen.getByTestId(`row-open-detail-${rowId1}`));
+    });
+    const dialog2 = screen.getByTestId('database-row-detail-dialog');
+    expect(tableContainer).toHaveAttribute('inert');
+    act(() => {
+      fireEvent.click(dialog2);
+    });
+    expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
+    expect(tableContainer).not.toHaveAttribute('inert');
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(document.activeElement).toBe(screen.getByTestId(`row-open-detail-${rowId1}`));
+
+    // 9. 详情内删除当前行测试：弹窗关闭，行被删除，焦点归还给相邻行打开按钮
+    act(() => {
+      fireEvent.click(screen.getByTestId(`row-open-detail-${rowId1}`));
+    });
+    const deleteBtn = screen.getByTestId('row-detail-delete-btn');
+    act(() => {
+      fireEvent.click(deleteBtn);
+    });
+    expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
+    expect(tableContainer).not.toHaveAttribute('inert');
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId1]).toBeUndefined();
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    const openBtn2 = screen.getByTestId(`row-open-detail-${rowId2}`);
+    expect(document.activeElement).toBe(openBtn2);
   });
 
-  it('80. [Day 11] Row as Page：正文内嵌 BlockEditor 富文本编辑、500ms 防抖持久化与端到端 hydrateStore 水合恢复', async () => {
+  it('80. [Day 11] Row as Page：真实 UI 正文内嵌 BlockEditor 多块编辑、属性编辑、500ms 防抖持久化与端到端 hydrateStore 水合恢复', async () => {
     const persistentStorage = new MemoryStorage(null, { isPersistent: true });
     useWorkspaceStore.getState().setStorageAdapter(persistentStorage);
 
@@ -3910,16 +3994,45 @@ describe('BlockEditor Component & Store Integration', () => {
       fireEvent.click(openBtn);
     });
 
-    // 2. 验证行详情内嵌 BlockEditor 渲染
+    // 2. 在行详情中通过真实 UI 编辑 URL 属性
+    const urlBtn = screen.getByTestId(`row-detail-url-${urlPropId}`);
+    expect(urlBtn).toHaveAttribute('type', 'button');
+    act(() => {
+      fireEvent.click(urlBtn);
+    });
+    const urlInput = screen.getByTestId('db-cell-input');
+    act(() => {
+      fireEvent.change(urlInput, { target: { value: 'https://architecture.google.com' } });
+      fireEvent.keyDown(urlInput, { key: 'Enter' });
+    });
+    expect(useWorkspaceStore.getState().databases[dbId].rows[rowId].cells[urlPropId]).toBe('https://architecture.google.com/');
+
+    // 3. 验证行详情内嵌 BlockEditor 渲染，并通过真实用户输入编辑两类正文块
     const blocksEditor = screen.getByTestId('row-detail-blocks-editor');
     expect(blocksEditor).toBeInTheDocument();
 
-    // 3. 在行正文块树中写入内容
+    const firstBlockEl = blocksEditor.querySelector('[contenteditable="true"]') as HTMLElement;
+    expect(firstBlockEl).toBeInTheDocument();
+
+    // 在首个段落块输入文字
+    firstBlockEl.innerText = '系统微内核架构设计';
     act(() => {
-      useWorkspaceStore.getState().updateDatabaseRowBlocks(dbId, rowId, [
-        { id: 'b-detail-1', type: 'heading1', content: '系统微内核架构' },
-        { id: 'b-detail-2', type: 'todo', content: '落地完成', properties: { checked: true } },
-      ]);
+      fireEvent.input(firstBlockEl);
+    });
+
+    // 在首块末尾按 Enter 拆分出第二块
+    setCaretPosition(firstBlockEl, '系统微内核架构设计'.length);
+    act(() => {
+      fireEvent.keyDown(firstBlockEl, { key: 'Enter' });
+    });
+
+    // 验证拆分后内嵌编辑器包含两块，并在第二块输入文字
+    const allBlockEls = blocksEditor.querySelectorAll('[contenteditable="true"]');
+    expect(allBlockEls.length).toBe(2);
+    const secondBlockEl = allBlockEls[1] as HTMLElement;
+    secondBlockEl.innerText = '核心模块与插件机制说明';
+    act(() => {
+      fireEvent.input(secondBlockEl);
     });
 
     // 4. 等待 550ms 防抖自动保存持久化
@@ -3928,7 +4041,14 @@ describe('BlockEditor Component & Store Integration', () => {
       await Promise.resolve();
     });
 
-    // 5. 重建 Store 并执行 hydrateStore 恢复快照
+    // 5. 点击关闭按钮关闭行详情弹窗，验证监听器清理
+    const closeBtn = screen.getByTestId('row-detail-close-btn');
+    act(() => {
+      fireEvent.click(closeBtn);
+    });
+    expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
+
+    // 6. 重建 Store 并执行 hydrateStore 恢复快照
     act(() => {
       useWorkspaceStore.setState({
         workspace: { id: 'ws-empty', name: '空', icon: '📝', description: '', memberCount: 1 },
@@ -3943,16 +4063,32 @@ describe('BlockEditor Component & Store Integration', () => {
       await useWorkspaceStore.getState().hydrateStore();
     });
 
-    // 6. 验证持久化快照完整恢复：标题、扩展属性 URL 及正文 blocks
-    const restoredDb = useWorkspaceStore.getState().databases[dbId];
-    expect(restoredDb).toBeDefined();
-    const restoredRow = restoredDb.rows[rowId];
-    expect(restoredRow.cells[titlePropId]).toBe('系统架构设计');
-    expect(restoredRow.cells[urlPropId]).toBe('https://architecture.example.com');
-    expect(restoredRow.blocks).toBeDefined();
-    expect(restoredRow.blocks?.length).toBe(2);
-    expect(restoredRow.blocks?.[0].content).toBe('系统微内核架构');
-    expect(restoredRow.blocks?.[1].properties?.checked).toBe(true);
+    // 7. 重新打开行详情弹窗，验证持久化快照通过真实 UI 100% 完整恢复
+    const openBtnRestored = screen.getByTestId(`row-open-detail-${rowId}`);
+    act(() => {
+      fireEvent.click(openBtnRestored);
+    });
+
+    const restoredDialog = screen.getByTestId('database-row-detail-dialog');
+    expect(restoredDialog).toBeInTheDocument();
+
+    // 标题恢复
+    expect(screen.getByTestId('row-detail-title-input')).toHaveValue('系统架构设计');
+    // URL 属性恢复
+    expect(screen.getByTestId(`row-detail-url-${urlPropId}`)).toHaveTextContent('https://architecture.google.com/');
+
+    // 内嵌 BlockEditor 正文两块内容全部恢复并渲染在真实 DOM 中
+    const restoredBlocksEditor = screen.getByTestId('row-detail-blocks-editor');
+    const restoredBlockEls = restoredBlocksEditor.querySelectorAll('[contenteditable="true"]');
+    expect(restoredBlockEls.length).toBe(2);
+    expect(restoredBlockEls[0]).toHaveTextContent('系统微内核架构设计');
+    expect(restoredBlockEls[1]).toHaveTextContent('核心模块与插件机制说明');
+
+    // 安全关闭
+    act(() => {
+      fireEvent.keyDown(restoredDialog, { key: 'Escape' });
+    });
+    expect(screen.queryByTestId('database-row-detail-dialog')).not.toBeInTheDocument();
   });
 });
 

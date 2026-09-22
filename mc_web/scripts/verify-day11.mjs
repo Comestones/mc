@@ -96,9 +96,11 @@ console.log('▶ 测试 2: CreatedTime 只读元数据派生字段隔离与不�
   db = addProperty(db, { name: '创建时间', type: 'createdTime' });
   const createdPropId = db.propertyOrder[1];
 
-  // 1. validateCellValue 对 createdTime 的任何值必须返回 false（只读不可写）
+  // 1. validateCellValue 对 createdTime 的任何值必须返回 false（只读不可写，包含 null 与 undefined）
   assert.equal(validateCellValue('2026-09-21', 'createdTime'), false);
   assert.equal(validateCellValue(Date.now(), 'createdTime'), false);
+  assert.equal(validateCellValue(null, 'createdTime'), false, 'createdTime 对 null 必须返回 false');
+  assert.equal(validateCellValue(undefined, 'createdTime'), false, 'createdTime 对 undefined 必须返回 false');
 
   // 2. addRow 尝试传入 createdTime cell，必须被静默过滤
   db = addRow(db, {
@@ -124,7 +126,7 @@ console.log('▶ 测试 2: CreatedTime 只读元数据派生字段隔离与不�
   assert.equal(db.rows[rowId].cells[createdPropId], undefined);
   assert.equal(db.rows[rowId].cells[DEFAULT_TITLE_PROPERTY_ID], '任务 1 已更新');
 
-  // 5. validateDatabaseSchema 拦截带有 createdTime cell 的损坏快照
+  // 5. validateDatabaseSchema 拦截带有 createdTime cell 的损坏快照（包括显式 null 或 undefined 键）
   const corruptDb = {
     ...db,
     rows: {
@@ -140,10 +142,44 @@ console.log('▶ 测试 2: CreatedTime 只读元数据派生字段隔离与不�
   };
   assert.equal(validateDatabaseSchema(corruptDb), false, '带有 createdTime cell 的数据库必须无法通过校验');
 
+  const corruptDbWithNull = {
+    ...db,
+    rows: {
+      ...db.rows,
+      [rowId]: {
+        ...db.rows[rowId],
+        cells: {
+          ...db.rows[rowId].cells,
+          [createdPropId]: null,
+        },
+      },
+    },
+  };
+  assert.equal(validateDatabaseSchema(corruptDbWithNull), false, '带有 createdTime: null 的损坏快照必须被严格拦截');
+
+  const corruptDbWithUndefined = {
+    ...db,
+    rows: {
+      ...db.rows,
+      [rowId]: {
+        ...db.rows[rowId],
+        cells: {
+          ...db.rows[rowId].cells,
+          [createdPropId]: undefined,
+        },
+      },
+    },
+  };
+  assert.equal(validateDatabaseSchema(corruptDbWithUndefined), false, '带有 createdTime: undefined 键的损坏快照必须被严格拦截');
+
   // 6. normalizeDatabaseSchema 自动清洗并自愈剥除 createdTime cell
   const healedDb = normalizeDatabaseSchema(corruptDb);
   assert.equal(validateDatabaseSchema(healedDb), true, '自愈后数据库必须通过严格校验');
   assert.equal(healedDb.rows[rowId].cells[createdPropId], undefined, '自愈后 createdTime cell 必须被安全剥除');
+
+  const healedDbNull = normalizeDatabaseSchema(corruptDbWithNull);
+  assert.equal(validateDatabaseSchema(healedDbNull), true, '自愈后 null cell 数据库必须通过严格校验');
+  assert.equal(healedDbNull.rows[rowId].cells[createdPropId], undefined, '自愈后 createdTime null cell 必须被安全剥除');
 
   console.log('  ✔ CreatedTime 只读隔离、不可变派生与自愈写保护通过');
 }
@@ -153,9 +189,17 @@ console.log('▶ 测试 2: CreatedTime 只读元数据派生字段隔离与不�
 // =================================================================
 console.log('▶ 测试 3: 跨类型单元格迁移矩阵覆盖 (Date / URL / CreatedTime)...');
 {
-  // 1. text -> date
+  // 1. text -> date (严格合法的本地 YYYY-MM-DD，拦截虚构日期、带时区字符串、非补零格式、非法分隔符)
   assert.equal(migrateCellForTypeChange('2026-09-21', 'text', 'date'), '2026-09-21');
   assert.equal(migrateCellForTypeChange('not-a-date', 'text', 'date'), null);
+  assert.equal(migrateCellForTypeChange('2026-02-30', 'text', 'date'), null, '虚构日期 2026-02-30 迁移必须返回 null');
+  assert.equal(migrateCellForTypeChange('2026-09-21T00:00:00Z', 'text', 'date'), null, '带时区字符串迁移必须返回 null');
+  assert.equal(migrateCellForTypeChange('2026-9-21', 'text', 'date'), null, '未补零格式迁移必须返回 null');
+  assert.equal(migrateCellForTypeChange('2026/09/21', 'text', 'date'), null, '非破折号分隔符迁移必须返回 null');
+  // 时间戳数字转换
+  const sampleTs = new Date(2026, 8, 25).getTime();
+  assert.equal(migrateCellForTypeChange(sampleTs, 'number', 'date'), '2026-09-25');
+  assert.equal(migrateCellForTypeChange(-1, 'number', 'date'), null);
 
   // 2. date -> text
   assert.equal(migrateCellForTypeChange('2026-09-21', 'date', 'text'), '2026-09-21');
@@ -177,22 +221,28 @@ console.log('▶ 测试 3: 跨类型单元格迁移矩阵覆盖 (Date / URL / Cr
   // 6. createdTime -> 任意类型 清空
   assert.equal(migrateCellForTypeChange('任意值', 'createdTime', 'text'), null);
 
-  // 7. getIncompatibleCellCount 测试
+  // 7. getIncompatibleCellCount 测试（虚构日期、带时区字符串与纯文本均计入不可转换数据）
   let db = createDatabase('类型兼容性测试库');
   db = addProperty(db, { name: '数据列', type: 'text' });
   const dataPropId = db.propertyOrder[1];
   db = addRow(db, { [DEFAULT_TITLE_PROPERTY_ID]: '行1', [dataPropId]: '2026-09-21' });
-  db = addRow(db, { [DEFAULT_TITLE_PROPERTY_ID]: '行2', [dataPropId]: '非有效日期文本' });
+  db = addRow(db, { [DEFAULT_TITLE_PROPERTY_ID]: '行2', [dataPropId]: '2026-02-30' }); // 虚构日期
+  db = addRow(db, { [DEFAULT_TITLE_PROPERTY_ID]: '行3', [dataPropId]: '2026-09-21T00:00:00Z' }); // 带时区
+  db = addRow(db, { [DEFAULT_TITLE_PROPERTY_ID]: '行4', [dataPropId]: '纯文本内容' });
 
   const incompCount = getIncompatibleCellCount(db, dataPropId, 'date');
-  assert.equal(incompCount, 1, '只有行2的非有效日期文本无法转换为 date');
+  assert.equal(incompCount, 3, '虚构日期、带时区字符串与纯文本均必须计入不可转换数据');
 
   // 执行切换
   db = changePropertyType(db, dataPropId, 'date');
   const row1Id = db.rowOrder[0];
   const row2Id = db.rowOrder[1];
+  const row3Id = db.rowOrder[2];
+  const row4Id = db.rowOrder[3];
   assert.equal(db.rows[row1Id].cells[dataPropId], '2026-09-21');
   assert.equal(db.rows[row2Id].cells[dataPropId], undefined);
+  assert.equal(db.rows[row3Id].cells[dataPropId], undefined);
+  assert.equal(db.rows[row4Id].cells[dataPropId], undefined);
   assert.equal(validateDatabaseSchema(db), true);
 
   console.log('  ✔ 跨类型单元格迁移矩阵与受影响行数预检查通过');

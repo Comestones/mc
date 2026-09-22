@@ -115,11 +115,12 @@ export function validateCellValue(
   type: PropertyType,
   options?: SelectOption[]
 ): boolean {
+  if (type === 'createdTime') {
+    // CreatedTime 纯属只读派生字段，禁止在单元格中持久化存储任何值（包括 null 与 undefined）
+    return false;
+  }
   if (val === null || val === undefined) return true;
   switch (type) {
-    case 'createdTime':
-      // CreatedTime 纯属只读派生字段，禁止在单元格中持久化存储任何值
-      return false;
     case 'title':
     case 'text':
       return typeof val === 'string';
@@ -338,9 +339,9 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
     for (const [cellPropId, cellValue] of Object.entries(row.cells)) {
       if (!propSet.has(cellPropId)) return false; // 悬空属性直接拦截
       const propDef = db.properties[cellPropId];
-      // createdTime 只读派生字段禁止存储单元格值
+      // createdTime 只读派生字段禁止在 row.cells 中存在任何键（包括 null / undefined）
       if (propDef.type === 'createdTime') {
-        if (cellValue !== null && cellValue !== undefined) return false;
+        return false;
       }
       if (!validateCellValue(cellValue, propDef.type, propDef.options)) {
         return false; // 非法单元格值形态或悬空 option 引用拦截
@@ -1091,16 +1092,11 @@ export function migrateCellForTypeChange(
 
     case 'date': {
       if (typeof val === 'string') {
-        if (isValidDateString(val)) return val;
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          const formatted = `${y}-${m}-${day}`;
-          if (isValidDateString(formatted)) return formatted;
-        }
-      } else if (typeof val === 'number' && Number.isFinite(val)) {
+        const trimmed = val.trim();
+        if (isValidDateString(trimmed)) return trimmed;
+        return null;
+      } else if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+        // 明确的正数时间戳转换（无时区漂移）
         const d = new Date(val);
         if (!isNaN(d.getTime())) {
           const y = d.getFullYear();
