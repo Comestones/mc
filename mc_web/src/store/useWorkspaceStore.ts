@@ -7,9 +7,11 @@ import type {
   DatabaseRow,
   CellValue,
   DatabaseMetaUpdates,
+  DatabaseViewConfigUpdates,
   PropertyType,
   SelectOption,
 } from '../types/database';
+import { updateViewConfig } from '../utils/databaseViewUtils';
 import { normalizeBlock, createDefaultParagraph } from '../utils/blockUtils';
 import { cascadeDeletePage } from '../utils/workspaceUtils';
 import {
@@ -81,6 +83,7 @@ interface WorkspaceState {
   databases: Record<string, DatabaseSchema>;
   createDatabase: (title?: string, initialProperties?: DatabaseProperty[]) => string;
   updateDatabase: (id: string, updates: DatabaseMetaUpdates) => void;
+  updateDatabaseViewConfig: (id: string, updates: DatabaseViewConfigUpdates) => void;
   deleteDatabase: (id: string) => void;
   addDatabaseProperty: (databaseId: string, property: Omit<DatabaseProperty, 'id'> & { id?: string }) => void;
   updateDatabaseProperty: (databaseId: string, propertyId: string, updates: Partial<DatabaseProperty>) => void;
@@ -567,6 +570,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             [id]: safeDb,
           },
         };
+      });
+      scheduleAutoSave(get, set, false);
+    },
+
+    updateDatabaseViewConfig: (id, updates) => {
+      set(state => {
+        const current = state.databases[id];
+        if (!current) return state;
+        const next = updateViewConfig(current, updates);
+        if (next === current) return state;
+        return { databases: { ...state.databases, [id]: next } };
       });
       scheduleAutoSave(get, set, false);
     },

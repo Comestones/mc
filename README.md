@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-10-10，已完成 **Day 1 至 Day 12（12 / 35，34.3%）**。多维数据库支持字段编辑、Row as Page 行详情与按单选状态分组的看板视图。
+截至 2026-10-10，已完成 **Day 1 至 Day 13（13 / 35，37.1%）**。多维数据库支持字段编辑、Row as Page 行详情、看板和画廊；三视图 Tab、看板分组和画廊配置均可刷新恢复。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -98,7 +98,8 @@
 - **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect) *(已完成)*。
 - **Day 11**：扩展字段类型 (Date, URL, CreatedTime) 与行详情展开为页面 (Row as Page) *(已完成)*。
 - **Day 12**：看板视图 (Board / Kanban View)，单选字段分组、跨列拖拽更新状态、键盘移动、列内新增、行详情与表格共享数据 *(已完成)*。
-- **Day 13**：画廊视图与完整视图切换器（下一任务）。
+- **Day 13**：响应式画廊、URL 字段封面、摘要字段开关、三视图键盘 Tab 与配置持久化 *(已完成)*。
+- **Day 14**：多条件筛选与多字段排序（下一任务）。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -110,7 +111,8 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（**90 项通过**；存储故障注入测试会输出预期诊断）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（**103 项通过**；存储故障注入测试会输出预期诊断）。
+- 执行 `npm run verify:day13` 运行 Day 13 的 13 项组件测试与配置契约验收。
 - 执行 `npm run verify:day12` 运行 Day 12 看板的 10 项真实组件与数据验收。
 - 执行 `npm run verify:day11` 运行 Day 11 扩展字段与行详情验收。
 - 执行 `npm run verify:day10` 运行 Day 10 基础字段类型系统验收。
@@ -128,6 +130,6 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 2 - Day 11: 扩展字段类型与行详情弹窗]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 2 - Day 14: 筛选与排序引擎]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！

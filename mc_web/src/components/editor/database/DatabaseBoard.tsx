@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { PRESET_OPTION_COLORS } from '../../../types/database';
+import { normalizeViewConfig } from '../../../utils/databaseViewUtils';
 import { groupBoardRows } from '../../../utils/boardUtils';
 import { DatabaseRowDetail } from './DatabaseRowDetail';
 
@@ -8,7 +9,6 @@ const DRAG_TYPE = 'application/x-mc-board-row';
 
 export function DatabaseBoard({ databaseId }: { databaseId: string }) {
   const database = useWorkspaceStore(state => state.databases[databaseId]);
-  const [requestedPropertyId, setRequestedPropertyId] = useState('');
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -16,7 +16,7 @@ export function DatabaseBoard({ databaseId }: { databaseId: string }) {
   const restoreFocusRef = useRef(false);
   const dragRef = useRef<{ rowId: string; propertyId: string } | null>(null);
   const selectProperties = database?.propertyOrder.filter(id => database.properties[id]?.type === 'select') ?? [];
-  const propertyId = selectProperties.includes(requestedPropertyId) ? requestedPropertyId : selectProperties[0];
+  const propertyId = database ? normalizeViewConfig(database, database.viewConfig).boardGroupPropertyId ?? '' : '';
 
   useEffect(() => {
     dragRef.current = null;
@@ -61,7 +61,7 @@ export function DatabaseBoard({ databaseId }: { databaseId: string }) {
         分组字段
         <select aria-label="看板分组字段" value={propertyId} onChange={event => {
           dragRef.current = null;
-          setRequestedPropertyId(event.target.value);
+          useWorkspaceStore.getState().updateDatabaseViewConfig(databaseId, { boardGroupPropertyId: event.target.value });
         }} className="rounded border p-1 bg-white dark:bg-neutral-800">
           {selectProperties.map(id => <option key={id} value={id}>{database.properties[id].name}</option>)}
         </select>

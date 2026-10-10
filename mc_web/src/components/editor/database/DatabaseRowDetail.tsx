@@ -46,7 +46,7 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
 
     // 1. 查找外部的表格容器设置 inert
     const tableContainers = document.querySelectorAll<HTMLElement>(
-      '[data-testid="database-table-container"], [data-testid="database-table"], [data-testid="database-board-container"]'
+      '[data-testid="database-table-container"], [data-testid="database-table"], [data-testid="database-board-container"], [data-testid="database-gallery-container"]'
     );
     tableContainers.forEach((el) => {
       if (!el.contains(dialogOverlay) && !el.hasAttribute('inert')) {
@@ -65,6 +65,20 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
           }
         }
       });
+    }
+
+    // Isolate ancestor siblings too: tabs, page chrome and other databases.
+    let ancestor: HTMLElement | null = dialogOverlay;
+    while (ancestor?.parentElement) {
+      const parent: HTMLElement = ancestor.parentElement;
+      for (const child of Array.from(parent.children)) {
+        if (child !== ancestor && child instanceof HTMLElement && !child.hasAttribute('inert')) {
+          child.setAttribute('inert', '');
+          isolatedElements.push(child);
+        }
+      }
+      if (parent === document.body) break;
+      ancestor = parent;
     }
 
     return () => {

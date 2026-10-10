@@ -140,9 +140,9 @@ describe('Day 12 看板验收', () => {
   });
   it('表格与看板共享数据，状态更新后切回表格仍保留', () => {
     render(<DatabaseBlock id="block" databaseId={db.id} />);
-    fireEvent.click(screen.getByRole('button', { name: '看板' }));
+    fireEvent.click(screen.getByRole('tab', { name: '看板' }));
     fireEvent.change(screen.getByRole('combobox', { name: '移动记录：任务一' }), { target: { value: 'done' } });
-    fireEvent.click(screen.getByRole('button', { name: '表格' }));
+    fireEvent.click(screen.getByRole('tab', { name: '表格' }));
     expect(screen.getByRole('grid')).toBeInTheDocument();
     expect(useWorkspaceStore.getState().databases[db.id].rows[db.rowOrder[0]].cells.status).toBe('done');
   });

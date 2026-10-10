@@ -10,6 +10,14 @@ import {
 import type { BlockNode } from '../types/document.ts';
 import { createDefaultParagraph, normalizeBlock } from './blockUtils.ts';
 
+import { normalizeViewConfig, validateViewConfig } from './databaseViewUtils.ts';
+
+function reconcileViewConfig(database: DatabaseSchema): DatabaseSchema {
+  return database.viewConfig === undefined ? database : {
+    ...database, viewConfig: normalizeViewConfig(database, database.viewConfig),
+  };
+}
+
 export const DEFAULT_TITLE_PROPERTY_ID = 'prop-title';
 
 /**
@@ -299,6 +307,8 @@ export function validateDatabaseSchema(data: unknown): data is DatabaseSchema {
 
   // 不变量：必须且只能有 1 个 title 属性
   if (titleCount !== 1) return false;
+
+  if (db.viewConfig !== undefined && !validateViewConfig(db as DatabaseSchema, db.viewConfig)) return false;
 
   // 校验 rows 与 rowOrder
   if (!db.rows || typeof db.rows !== 'object') return false;
@@ -593,6 +603,7 @@ export function normalizeDatabaseSchema(database: DatabaseSchema): DatabaseSchem
     updatedAt: dbUpdatedAt,
     properties,
     propertyOrder: cleanPropOrder,
+    ...(database.viewConfig !== undefined ? { viewConfig: normalizeViewConfig({ properties, propertyOrder: cleanPropOrder }, database.viewConfig) } : {}),
     rows,
     rowOrder: cleanRowOrder,
   };
@@ -632,12 +643,12 @@ export function addProperty(
   const nextProperties = { ...db.properties, [propId]: newProp };
   const nextPropertyOrder = [...db.propertyOrder, propId];
 
-  return {
+  return reconcileViewConfig({
     ...db,
     properties: nextProperties,
     propertyOrder: nextPropertyOrder,
     updatedAt: Date.now(),
-  };
+  });
 }
 
 /**
@@ -667,14 +678,14 @@ export function updateProperty(
     id: propertyId, // 保证 ID 不被篡改
   };
 
-  return {
+  return reconcileViewConfig({
     ...db,
     properties: {
       ...db.properties,
       [propertyId]: updatedProp,
     },
     updatedAt: Date.now(),
-  };
+  });
 }
 
 /**
@@ -709,13 +720,13 @@ export function deleteProperty(
     };
   }
 
-  return {
+  return reconcileViewConfig({
     ...db,
     properties: nextProperties,
     propertyOrder: nextPropertyOrder,
     rows: nextRows,
     updatedAt: Date.now(),
-  };
+  });
 }
 
 /**
@@ -1202,7 +1213,7 @@ export function changePropertyType(
     };
   }
 
-  return {
+  return reconcileViewConfig({
     ...db,
     properties: {
       ...db.properties,
@@ -1210,7 +1221,7 @@ export function changePropertyType(
     },
     rows: nextRows,
     updatedAt: Date.now(),
-  };
+  });
 }
 
 /**
@@ -1341,4 +1352,3 @@ export function deleteSelectOption(
     updatedAt: Date.now(),
   };
 }
-

@@ -105,9 +105,27 @@ export interface DatabaseSchema {
   icon?: string;
   description?: string;
   properties: Record<string, DatabaseProperty>;
+  viewConfig?: DatabaseViewConfig; // Optional for legacy v2 snapshots
   propertyOrder: string[]; // 属性列展示次序
   rows: Record<string, DatabaseRow>;
   rowOrder: string[]; // 行记录展示次序
   createdAt: number;
   updatedAt: number;
+}
+
+export type DatabaseViewType = 'table' | 'board' | 'gallery';
+
+export interface DatabaseViewConfig {
+  activeView: DatabaseViewType;
+  boardGroupPropertyId: string | null;
+  gallery: {
+    coverPropertyId: string | null;
+    visiblePropertyIds: string[];
+  };
+}
+
+export interface DatabaseViewConfigUpdates {
+  activeView?: DatabaseViewType;
+  boardGroupPropertyId?: string | null;
+  gallery?: Partial<DatabaseViewConfig['gallery']>;
 }
