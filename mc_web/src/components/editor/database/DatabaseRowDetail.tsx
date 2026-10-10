@@ -46,7 +46,7 @@ export const DatabaseRowDetail: React.FC<DatabaseRowDetailProps> = ({
 
     // 1. 查找外部的表格容器设置 inert
     const tableContainers = document.querySelectorAll<HTMLElement>(
-      '[data-testid="database-table-container"], [data-testid="database-table"]'
+      '[data-testid="database-table-container"], [data-testid="database-table"], [data-testid="database-board-container"]'
     );
     tableContainers.forEach((el) => {
       if (!el.contains(dialogOverlay) && !el.hasAttribute('inert')) {

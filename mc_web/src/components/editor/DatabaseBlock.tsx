@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle,
   Plus,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { DatabaseTable } from './database/DatabaseTable';
+import { DatabaseBoard } from './database/DatabaseBoard';
 
 interface DatabaseBlockProps {
   id: string;
@@ -29,6 +30,8 @@ export const DatabaseBlock: React.FC<DatabaseBlockProps> = ({
   const createDatabase = useWorkspaceStore((state) => state.createDatabase);
   const addDatabaseRow = useWorkspaceStore((state) => state.addDatabaseRow);
   const updateDatabase = useWorkspaceStore((state) => state.updateDatabase);
+
+  const [view, setView] = useState<'table' | 'board'>('table');
 
   // 1. 数据库未绑定或实体已丢失降级回退处理
   if (!database || !databaseId) {
@@ -125,12 +128,16 @@ export const DatabaseBlock: React.FC<DatabaseBlockProps> = ({
         </div>
       </div>
 
-      {/* Day 9 表格视图核心交互组件 */}
-      <DatabaseTable databaseId={database.id} />
+      {/* 数据库视图入口 */}
+      <div role="group" aria-label="数据库视图" className="flex gap-2 px-4 py-2 text-xs">
+        <button type="button" aria-pressed={view === 'table'} onClick={() => setView('table')} className="rounded px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">表格</button>
+        <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')} className="rounded px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">看板</button>
+      </div>
+      {view === 'table' ? <DatabaseTable databaseId={database.id} /> : <DatabaseBoard key={database.id} databaseId={database.id} />}
 
       {/* 底部信息栏 */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-50 dark:bg-neutral-900/30 border-t border-border-light/60 dark:border-border-dark/60 text-[11px] text-text-muted-light dark:text-text-muted-dark">
-        <span>Day 9 表格视图核心交互就绪</span>
+        <span>表格与看板共享实时数据</span>
         <span>共 {rowsCount} 条记录</span>
       </div>
     </div>

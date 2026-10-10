@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-09-21，**Sprint 1 与 Sprint 2 核心多维数据库基础阶段已高质量交付**（Day 1 至 Day 11，已完成 11 / 35，31.4%），当前多维数据库引擎已全面具备 8 类字段类型与 Row as Page 行详情编辑闭环，即将推进 **Day 12 看板视图 (Board View)**。
+截至 2026-10-10，已完成 **Day 1 至 Day 12（12 / 35，34.3%）**。多维数据库支持字段编辑、Row as Page 行详情与按单选状态分组的看板视图。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -97,7 +97,8 @@
 - **Day 9**：表格视图 (Table View) 核心交互、列宽拖拽调整与单元格即时点按编辑 *(已完成)*。
 - **Day 10**：基础字段类型系统 (Property Types: text, number, checkbox, select, multiSelect) *(已完成)*。
 - **Day 11**：扩展字段类型 (Date, URL, CreatedTime) 与行详情展开为页面 (Row as Page) *(已完成)*。
-- **Day 12**：看板视图 (Board / Kanban View)。
+- **Day 12**：看板视图 (Board / Kanban View)，单选字段分组、跨列拖拽更新状态、键盘移动、列内新增、行详情与表格共享数据 *(已完成)*。
+- **Day 13**：画廊视图与完整视图切换器（下一任务）。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -109,7 +110,9 @@ npm ci
 npm run dev
 ```
 
-- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（**72 项全部通过**，0 警告 0 报错）。
+- 在 `mc_web` 目录执行 `npm test` 运行 Vitest 真实组件测试套件（**90 项通过**；存储故障注入测试会输出预期诊断）。
+- 执行 `npm run verify:day12` 运行 Day 12 看板的 10 项真实组件与数据验收。
+- 执行 `npm run verify:day11` 运行 Day 11 扩展字段与行详情验收。
 - 执行 `npm run verify:day10` 运行 Day 10 基础字段类型系统验收。
 - 执行 `npm run verify:day9` 运行 Day 9 表格视图核心交互验收。
 - 执行 `npm run verify:day8` 运行 Day 8 多维数据库 Schema 与底层数据层验收。
