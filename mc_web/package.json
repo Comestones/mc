@@ -20,7 +20,8 @@
     "verify:day10": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day10.mjs",
     "verify:day13": "vitest run src/test/DatabaseGallery.test.tsx && node scripts/verify-day13.mjs",
     "verify:day12": "vitest run src/test/DatabaseBoard.test.tsx",
-    "verify:day11": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day11.mjs"
+    "verify:day11": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day11.mjs",
+    "verify:day14": "vitest run src/test/DatabaseQuery.test.tsx && node scripts/verify-day14.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

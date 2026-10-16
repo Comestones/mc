@@ -3,6 +3,7 @@ import type { DatabaseProperty, DatabaseRow } from '../../../types/database';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { normalizeViewConfig, safeCoverUrl } from '../../../utils/databaseViewUtils';
 import { formatCreatedTime } from '../../../utils/databaseUtils';
+import { useDatabaseRowIds } from './useDatabaseRowIds';
 import { DatabaseRowDetail } from './DatabaseRowDetail';
 
 export function formatGalleryValue(property: DatabaseProperty, row: DatabaseRow): string {
@@ -23,6 +24,7 @@ function GalleryCover({ url }: { url: string | null }) {
 }
 
 export function DatabaseGallery({ databaseId }: { databaseId: string }) {
+  const rowIds = useDatabaseRowIds(databaseId);
   const database = useWorkspaceStore(state => state.databases[databaseId]);
   const updateConfig = useWorkspaceStore(state => state.updateDatabaseViewConfig);
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
@@ -78,9 +80,9 @@ export function DatabaseGallery({ databaseId }: { databaseId: string }) {
           {properties.length === 0 && <span className="text-neutral-500">暂无可展示字段，卡片始终显示标题。</span>}
         </fieldset>
       </div>}
-      {database.rowOrder.length === 0 && <p className="text-sm text-neutral-500">暂无记录，添加第一张卡片开始。</p>}
+      {rowIds.length === 0 && <p className="text-sm text-neutral-500">{database.rowOrder.length ? "没有符合筛选条件的记录，可清空筛选后查看全部记录" : "暂无记录，添加第一张卡片开始。"}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {database.rowOrder.map(rowId => {
+        {rowIds.map(rowId => {
           const row = database.rows[rowId];
           if (!row) return null;
           const title = String(row.cells[titleId] || '无标题');

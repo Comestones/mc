@@ -1,7 +1,7 @@
 import type { DatabaseSchema } from '../types/database';
 
 /** Preserve option and row order; missing or stale values remain visible. */
-export function groupBoardRows(database: DatabaseSchema, propertyId: string) {
+export function groupBoardRows(database: DatabaseSchema, propertyId: string, rowIds: string[] = database.rowOrder) {
   const property = database.properties[propertyId];
   if (property?.type !== 'select') return [];
   const groups = (property.options ?? []).map(option => ({
@@ -9,7 +9,7 @@ export function groupBoardRows(database: DatabaseSchema, propertyId: string) {
   }));
   const ungrouped = { id: null, name: '未分组', color: undefined, rowIds: [] as string[] };
   const byId = new Map(groups.map(group => [group.id, group]));
-  for (const rowId of database.rowOrder) {
+  for (const rowId of rowIds) {
     const row = database.rows[rowId];
     if (!row) continue;
     const value = row.cells[propertyId];

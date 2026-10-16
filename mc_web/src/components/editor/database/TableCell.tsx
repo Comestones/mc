@@ -69,7 +69,7 @@ export const TableCell: React.FC<TableCellProps> = ({
     if (isFocused && !isEditing) {
       cellRef.current?.focus();
     }
-  }, [isFocused, isEditing]);
+  }, [isFocused, isEditing, rowIndex]);
 
   const handleCommit = useCallback(
     (val: any) => {

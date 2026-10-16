@@ -1342,7 +1342,7 @@ export function deleteSelectOption(
     };
   }
 
-  return {
+  return reconcileViewConfig({
     ...db,
     properties: {
       ...db.properties,
@@ -1350,5 +1350,5 @@ export function deleteSelectOption(
     },
     rows: nextRows,
     updatedAt: Date.now(),
-  };
+  });
 }

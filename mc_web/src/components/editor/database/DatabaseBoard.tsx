@@ -3,11 +3,13 @@ import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { PRESET_OPTION_COLORS } from '../../../types/database';
 import { normalizeViewConfig } from '../../../utils/databaseViewUtils';
 import { groupBoardRows } from '../../../utils/boardUtils';
+import { useDatabaseRowIds } from './useDatabaseRowIds';
 import { DatabaseRowDetail } from './DatabaseRowDetail';
 
 const DRAG_TYPE = 'application/x-mc-board-row';
 
 export function DatabaseBoard({ databaseId }: { databaseId: string }) {
+  const rowIds = useDatabaseRowIds(databaseId);
   const database = useWorkspaceStore(state => state.databases[databaseId]);
   const [detailRowId, setDetailRowId] = useState<string | null>(null);
   const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function DatabaseBoard({ databaseId }: { databaseId: string }) {
 
   if (!database) return null;
   const titleId = database.propertyOrder.find(id => database.properties[id]?.type === 'title')!;
-  const groups = propertyId ? groupBoardRows(database, propertyId) : [];
+  const groups = propertyId ? groupBoardRows(database, propertyId, rowIds) : [];
 
   return <>
     <div ref={boardRef} role="region" aria-label="数据库看板" data-testid="database-board-container" className="p-3 space-y-3">
@@ -77,6 +79,7 @@ export function DatabaseBoard({ databaseId }: { databaseId: string }) {
           });
         }}>添加状态字段</button>
       </div>}
+      {database.rowOrder.length > 0 && rowIds.length === 0 && <p className="text-xs text-neutral-500">没有符合筛选条件的记录，可清空筛选后查看全部记录</p>}
       <div className="flex gap-3 overflow-x-auto pb-2">
         {groups.map(group => {
           const groupKey = group.id === null ? 'ungrouped' : `option-${group.id}`;

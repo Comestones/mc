@@ -1,3 +1,4 @@
+import { DatabaseQueryControls } from './DatabaseQueryControls';
 import { useId } from 'react';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import type { DatabaseViewType } from '../../../types/database';
@@ -34,6 +35,7 @@ export function DatabaseViews({ databaseId }: { databaseId: string }) {
           event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
         }}>{view.name}</button>)}
     </div>
+    <DatabaseQueryControls databaseId={databaseId} />
     <div role="tabpanel" id={`${prefix}-panel`} aria-labelledby={`${prefix}-${activeView}`} tabIndex={0}>
       {activeView === 'table' && <DatabaseTable databaseId={databaseId} />}
       {activeView === 'board' && <DatabaseBoard databaseId={databaseId} />}

@@ -115,7 +115,27 @@ export interface DatabaseSchema {
 
 export type DatabaseViewType = 'table' | 'board' | 'gallery';
 
+export type FilterOperator = 'equals' | 'notEquals' | 'contains' | 'notContains'
+  | 'gt' | 'gte' | 'lt' | 'lte' | 'isEmpty' | 'isNotEmpty';
+export interface DatabaseFilter {
+  id: string;
+  propertyId: string;
+  propertyType: PropertyType;
+  operator: FilterOperator;
+  value: string | number | boolean | null;
+}
+export interface DatabaseSort {
+  propertyId: string;
+  propertyType: PropertyType;
+  direction: 'asc' | 'desc';
+}
+export interface DatabaseQuery {
+  filters: DatabaseFilter[];
+  sorts: DatabaseSort[];
+}
+
 export interface DatabaseViewConfig {
+  query?: DatabaseQuery; // Absent in legacy v2 snapshots; filters use AND.
   activeView: DatabaseViewType;
   boardGroupPropertyId: string | null;
   gallery: {
@@ -125,6 +145,7 @@ export interface DatabaseViewConfig {
 }
 
 export interface DatabaseViewConfigUpdates {
+  query?: DatabaseQuery;
   activeView?: DatabaseViewType;
   boardGroupPropertyId?: string | null;
   gallery?: Partial<DatabaseViewConfig['gallery']>;

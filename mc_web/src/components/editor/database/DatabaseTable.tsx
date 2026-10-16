@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
 import { TableHeader, DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH } from './TableHeader';
 import { TableRow } from './TableRow';
 import { DatabaseRowDetail } from './DatabaseRowDetail';
+import { useDatabaseRowIds } from './useDatabaseRowIds';
 import { Plus } from 'lucide-react';
 
 const EMPTY_ARRAY: string[] = [];
@@ -16,9 +17,8 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
   const propertyOrder = useWorkspaceStore(
     (state) => state.databases[databaseId]?.propertyOrder || EMPTY_ARRAY
   );
-  const rowOrder = useWorkspaceStore(
-    (state) => state.databases[databaseId]?.rowOrder || EMPTY_ARRAY
-  );
+  const rowOrder = useDatabaseRowIds(databaseId);
+  const totalRows = useWorkspaceStore(state => state.databases[databaseId]?.rowOrder.length ?? 0);
   const properties = useWorkspaceStore(
     (state) => state.databases[databaseId]?.properties || EMPTY_OBJ
   );
@@ -26,33 +26,39 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
 
   const [activeDetailRowId, setActiveDetailRowId] = useState<string | null>(null);
 
-  const [focusedCell, setFocusedCell] = useState<{
-    rowIndex: number;
-    colIndex: number;
-  } | null>(null);
-
-  const [editingCell, setEditingCell] = useState<{
-    rowIndex: number;
-    colIndex: number;
-  } | null>(null);
+  // Track identity rather than result indexes so sorting cannot move an editor to another row.
+  const [focusedPosition, setFocusedPosition] = useState<{ rowId: string; colIndex: number } | null>(null);
+  const [editingPosition, setEditingPosition] = useState<{ rowId: string; colIndex: number } | null>(null);
+  const focusedIndex = focusedPosition ? rowOrder.indexOf(focusedPosition.rowId) : -1;
+  const editingIndex = editingPosition ? rowOrder.indexOf(editingPosition.rowId) : -1;
+  const focusedCell = focusedPosition && focusedIndex >= 0 ? { rowIndex: focusedIndex, colIndex: focusedPosition.colIndex } : null;
+  const editingCell = editingPosition && editingIndex >= 0 ? { rowIndex: editingIndex, colIndex: editingPosition.colIndex } : null;
+  const tableRef = useRef<HTMLDivElement>(null);
 
   // 实时调整列宽的临时状态（键为 propId，值为像素宽度）
   const [resizingWidths, setResizingWidths] = useState<Record<string, number>>({});
 
-  const prevRowCountRef = useRef(rowOrder.length);
+  useEffect(() => {
+    if (focusedPosition && !rowOrder.includes(focusedPosition.rowId)) setFocusedPosition(null);
+    if (editingPosition && !rowOrder.includes(editingPosition.rowId)) setEditingPosition(null);
+  }, [rowOrder, focusedPosition, editingPosition]);
+
+  const prevRowCountRef = useRef(totalRows);
 
   // 监听行数增加，自动聚焦到新添加行的标题列
   useEffect(() => {
-    if (rowOrder.length > prevRowCountRef.current) {
-      const newRowIdx = rowOrder.length - 1;
+    if (totalRows > prevRowCountRef.current) {
+      const lastId = useWorkspaceStore.getState().databases[databaseId]?.rowOrder.at(-1);
+      const newRowIdx = lastId ? rowOrder.indexOf(lastId) : -1;
+      if (newRowIdx < 0) { prevRowCountRef.current = totalRows; return; }
       const titleColIdx = propertyOrder.findIndex(
         (pid) => properties[pid]?.type === 'title'
       );
       const targetColIdx = titleColIdx >= 0 ? titleColIdx : 0;
-      setFocusedCell({ rowIndex: newRowIdx, colIndex: targetColIdx });
+      setFocusedPosition({ rowId: rowOrder[newRowIdx], colIndex: targetColIdx });
     }
-    prevRowCountRef.current = rowOrder.length;
-  }, [rowOrder.length, propertyOrder, properties]);
+    prevRowCountRef.current = totalRows;
+  }, [totalRows, rowOrder, databaseId, propertyOrder, properties]);
 
   const handleColumnResizing = useCallback((propId: string, width: number | null) => {
     setResizingWidths((prev) => {
@@ -67,23 +73,23 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
   }, []);
 
   const handleFocusCell = useCallback((rowIndex: number, colIndex: number) => {
-    setEditingCell(null);
-    setFocusedCell({ rowIndex, colIndex });
-  }, []);
+    setEditingPosition(null);
+    setFocusedPosition({ rowId: rowOrder[rowIndex], colIndex });
+  }, [rowOrder]);
 
   const handleStartEdit = useCallback((rowIndex: number, colIndex: number) => {
-    setFocusedCell({ rowIndex, colIndex });
-    setEditingCell({ rowIndex, colIndex });
-  }, []);
+    setFocusedPosition({ rowId: rowOrder[rowIndex], colIndex });
+    setEditingPosition({ rowId: rowOrder[rowIndex], colIndex });
+  }, [rowOrder]);
 
   const handleStopEdit = useCallback(() => {
-    setEditingCell(null);
+    setEditingPosition(null);
   }, []);
 
   const handleNavigate = useCallback(
     (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => {
-      setFocusedCell((prev) => {
-        const currentR = prev?.rowIndex ?? 0;
+      setFocusedPosition((prev) => {
+        const currentR = Math.max(0, prev ? rowOrder.indexOf(prev.rowId) : 0);
         const currentC = prev?.colIndex ?? 0;
         const numRows = rowOrder.length;
         const numCols = propertyOrder.length;
@@ -124,11 +130,11 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
             break;
         }
 
-        return { rowIndex: nextR, colIndex: nextC };
+        return { rowId: rowOrder[nextR], colIndex: nextC };
       });
-      setEditingCell(null);
+      setEditingPosition(null);
     },
-    [rowOrder.length, propertyOrder.length]
+    [rowOrder, propertyOrder.length]
   );
 
   const handleAddRow = () => {
@@ -136,13 +142,14 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
       propertyOrder.find((pid) => properties[pid]?.type === 'title') ||
       propertyOrder[0];
     addDatabaseRow(databaseId, {
-      [titlePropId]: `记录 ${rowOrder.length + 1}`,
+      [titlePropId]: `记录 ${totalRows + 1}`,
     });
   };
 
   return (
     <>
       <div
+        ref={tableRef}
         role="region"
         aria-label="数据表格"
         data-testid="database-table-container"
@@ -179,7 +186,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
                 className="px-4 py-8 text-center text-text-muted-light dark:text-text-muted-dark italic"
               >
                 <div className="flex flex-col items-center justify-center gap-2">
-                  <span>暂无记录，点击下方按钮开始录入数据</span>
+                  <span>{totalRows ? "没有符合筛选条件的记录，可清空筛选后查看全部记录" : "暂无记录，点击下方按钮开始录入数据"}</span>
                   <button
                     type="button"
                     data-testid="empty-add-row-btn"
@@ -238,20 +245,20 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
             const lastRowId = activeDetailRowId;
             setActiveDetailRowId(null);
             setTimeout(() => {
-              const trigger = document.querySelector(
+              const trigger = tableRef.current?.querySelector(
                 `[data-testid="row-open-detail-${lastRowId}"]`
               ) as HTMLElement | null;
               if (trigger) {
                 trigger.focus();
               } else {
-                const nextTrigger = document.querySelector(
+                const nextTrigger = tableRef.current?.querySelector(
                   '[data-testid^="row-open-detail-"]'
                 ) as HTMLElement | null;
                 if (nextTrigger) {
                   nextTrigger.focus();
                 } else {
-                  const addRowBtn = document.querySelector(
-                    '[data-testid="table-bottom-add-row-btn"]'
+                  const addRowBtn = tableRef.current?.querySelector(
+                    '[data-testid="table-bottom-add-row-btn"], [data-testid="empty-add-row-btn"]'
                   ) as HTMLElement | null;
                   addRowBtn?.focus();
                 }

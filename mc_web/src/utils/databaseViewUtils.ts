@@ -1,5 +1,7 @@
 import type { DatabaseSchema, DatabaseViewConfig, DatabaseViewConfigUpdates } from '../types/database.ts';
 
+import { normalizeQuery, validateQuery } from './databaseQueryUtils.ts';
+
 type ViewSchema = Pick<DatabaseSchema, 'properties' | 'propertyOrder'>;
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -12,6 +14,7 @@ export function normalizeViewConfig(database: ViewSchema, value: unknown): Datab
   const displayable = database.propertyOrder.filter(id => database.properties[id]?.type !== 'title');
   const requested = Array.isArray(gallery.visiblePropertyIds) ? gallery.visiblePropertyIds : displayable.slice(0, 3);
   return {
+    ...(input.query !== undefined ? { query: normalizeQuery(database, input.query) } : {}),
     activeView: input.activeView === 'board' || input.activeView === 'gallery' ? input.activeView : 'table',
     boardGroupPropertyId: typeof input.boardGroupPropertyId === 'string' && selectable.includes(input.boardGroupPropertyId)
       ? input.boardGroupPropertyId : selectable[0] ?? null,
@@ -28,6 +31,7 @@ export function validateViewConfig(database: ViewSchema, value: unknown): boolea
   const gallery = object(input.gallery);
   const normalized = normalizeViewConfig(database, value);
   return input.activeView === normalized.activeView && input.boardGroupPropertyId === normalized.boardGroupPropertyId
+    && (input.query === undefined || validateQuery(database, input.query))
     && gallery.coverPropertyId === normalized.gallery.coverPropertyId
     && Array.isArray(gallery.visiblePropertyIds)
     && gallery.visiblePropertyIds.length === normalized.gallery.visiblePropertyIds.length
