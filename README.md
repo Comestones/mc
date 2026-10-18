@@ -16,17 +16,17 @@
 | 模块 | 当前实现 / 后续规划 |
 | :--- | :--- |
 | **前端 Web & UI** | 已实现：React 18.3.1 + TypeScript + Vite + Tailwind CSS + Lucide + Zustand；Shadcn UI 尚未接入 |
-| **编辑器与协同内核** | 已实现：自主轻量块树引擎 (`mc-block-engine`)，实现 BlockNode 1:1 双向绑定与常用块编辑；规划接入 Yjs + y-indexeddb |
+| **编辑器与协同内核** | 已实现：自主轻量块树引擎 (`mc-block-engine`)，实现 BlockNode 1:1 双向绑定与常用块编辑；已接入可选 Yjs 传输通道；编辑器绑定与 y-indexeddb 尚未接入 |
 | **桌面客户端壳** | 规划：Tauri 2.0 (Rust) |
-| **后端 API & WebSocket** | 规划：Node.js (Hono / Fastify) + Hocuspocus CRDT 网关 |
+| **后端 API & WebSocket** | 已实现：Node.js + Hocuspocus 本机协同通道；REST API 与账户鉴权待实现 |
 | **数据持久化与存储** | 规划：PostgreSQL 16 (Prisma/Drizzle) + S3 兼容对象存储 (MinIO/R2) |
-| **部署形式** | 当前为 mc_web 独立 npm 工程；规划 Docker Compose 一键启动 |
+| **部署形式** | 当前为 mc_web 与 mc_sync 独立 npm 工程；规划 Docker Compose 一键启动 |
 
 ---
 
 ## 📍 当前进度与最新交付
 
-截至 2026-10-16，已完成 **Day 1 至 Day 14（14 / 35，40.0%）**。多维数据库支持字段编辑、Row as Page 行详情、看板和画廊；三视图 Tab、看板分组、画廊配置及组合筛选/多字段排序均可在自动保存完成后刷新恢复。
+截至 2026-10-18，已完成 **Day 1 至 Day 15（15 / 35，42.9%）**。多维数据库支持字段编辑、Row as Page 行详情、看板和画廊；三视图 Tab、看板分组、画廊配置及组合筛选/多字段排序均可在自动保存完成后刷新恢复。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -99,7 +99,9 @@
 - **Day 11**：扩展字段类型 (Date, URL, CreatedTime) 与行详情展开为页面 (Row as Page) *(已完成)*。
 - **Day 12**：看板视图 (Board / Kanban View)，单选字段分组、跨列拖拽更新状态、键盘移动、列内新增、行详情与表格共享数据 *(已完成)*。
 - **Day 13**：响应式画廊、URL 字段封面、摘要字段开关、三视图键盘 Tab 与配置持久化 *(已完成)*。
-- **Day 14**：三视图共享 AND 筛选、多字段升降序排序与优先级调整、空值处理、配置持久化和编辑身份保护 *(已完成)*。下一任务为 Sprint 3 / Day 15 协同服务搭建。
+- **Day 14**：三视图共享 AND 筛选、多字段升降序排序与优先级调整、空值处理、配置持久化和编辑身份保护 *(已完成)*。下一任务为 Day 16 编辑器协同绑定。
+
+- **Day 15**：新增 mc_sync Hocuspocus 服务、可选客户端 Provider、通道状态、心跳/自动重连与切页资源清理 *(已完成)*。当前页面内容仍仅保存在本地，内容绑定属于 Day 16。
 
 详细任务、核查依据及验收清单见 [每日研发规划](DAILY_DEVELOPMENT_PLAN.md)。
 
@@ -132,6 +134,15 @@ npm run dev
 
 打开 [DAILY_DEVELOPMENT_PLAN.md](DAILY_DEVELOPMENT_PLAN.md) 查看当前进度与今日目标。每日只需输入：
 
-> *"今天我们推进 [Sprint 3 - Day 15: 协同服务搭建]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
+> *"今天我们推进 [Sprint 3 - Day 16: 编辑器协同绑定]，请查看 DAILY_DEVELOPMENT_PLAN.md 并开始。"*
 
 即可快速进入当日开发闭环！
+
+
+## Day 15 协同通道启动
+
+要求 Node.js >=22。在一个终端运行 `npm --prefix mc_sync ci` 和 `npm --prefix mc_sync start`。健康检查为 `http://127.0.0.1:1234/healthz`。
+
+另一个 PowerShell 终端中设置 `$env:VITE_COLLABORATION_URL = 'ws://127.0.0.1:1234'` 后运行 `npm --prefix mc_web run dev`；未设置该变量时为本地编辑模式。也可使用 mc_web/.env.example 创建已忽略的 .env.local。
+
+执行 `npm --prefix mc_web run verify:day15` 运行前端生命周期、真实通道与服务端专项测试（需要先安装两个工程的依赖）。[完整配置与运行说明](mc_sync/README.md)。服务目前为本机内存通道，编辑器内容实时绑定、账户鉴权和持久化按后续日程实施。

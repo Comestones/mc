@@ -3,6 +3,8 @@ import { AppLayout } from './components/layout/AppLayout';
 import { DocumentPage } from './pages/DocumentPage';
 import { useWorkspaceStore } from './store/useWorkspaceStore';
 
+const CollaborationChannel = React.lazy(() => import('./collaboration/CollaborationChannel'));
+
 export const App: React.FC = () => {
   const { theme, isHydrated, hydrateStore } = useWorkspaceStore();
 
@@ -31,6 +33,7 @@ export const App: React.FC = () => {
 
   return (
     <AppLayout>
+      {import.meta.env.VITE_COLLABORATION_URL && <React.Suspense fallback={null}><CollaborationChannel /></React.Suspense>}
       <DocumentPage />
     </AppLayout>
   );

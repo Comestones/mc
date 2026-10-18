@@ -1,8 +1,8 @@
 import React from 'react';
+import { CollaborationStatus } from '../common/CollaborationStatus';
 import {
   PanelLeft,
   Star,
-  Users,
   Search,
   Plus,
   Check,
@@ -130,11 +130,7 @@ export const Navbar: React.FC = () => {
           )}
         </div>
 
-        {/* 协同在线感知状态 */}
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium mr-1">
-          <Users className="w-3 h-3" />
-          <span>双人协同就绪</span>
-        </div>
+        <CollaborationStatus />
 
         {/* 快捷搜索 */}
         <button
