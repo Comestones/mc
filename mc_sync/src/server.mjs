@@ -1,3 +1,4 @@
+import { seedPage } from './pageSeed.mjs';
 import { Server } from '@hocuspocus/server';
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4173', 'http://127.0.0.1:4173'];
@@ -45,6 +46,9 @@ export function createSyncServer(options = {}) {
     async onAuthenticate({ documentName }) {
       if (!validRoom(documentName)) throw new Error('Invalid mc room');
       // Local development transport only. Account authentication is a later milestone.
+    },
+    async onStateless({ document, payload }) {
+      try { seedPage(document, JSON.parse(payload)); } catch { /* Ignore malformed initialization requests. */ }
     },
     async onRequest({ request, response }) {
       const healthy = request.method === 'GET' && request.url === '/healthz';

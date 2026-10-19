@@ -1,3 +1,4 @@
+import { editorBinding } from '../../collaboration/editorBridge';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BlockNode, BlockType } from '../../types/document';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
@@ -110,6 +111,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         newBlocks.length === 0
           ? [createDefaultParagraph()]
           : newBlocks.map(normalizeBlock);
+      if (options?.recordHistoryNow) editorBinding(documentId)?.stopCapturing?.();
       blocksRef.current = safeBlocks;
       setBlocks(safeBlocks);
       if (onChange) {
@@ -118,6 +120,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         updateDocumentBlocks(documentId, safeBlocks);
       }
 
+      if (options?.recordHistoryNow) editorBinding(documentId)?.stopCapturing?.();
       if (options?.focus !== undefined) {
         setCursorFocus(options.focus);
       }
@@ -199,8 +202,19 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     }
   }, [documentId, getInitialBlocks, initialBlocks, controlledBlocks, onChange, updateDocumentBlocks]);
 
+  // Reflect remote Store updates without recording them in the local snapshot history.
+  useEffect(() => {
+    if (!controlledBlocks) return;
+    const incoming = controlledBlocks.length ? controlledBlocks.map(normalizeBlock) : [createDefaultParagraph()];
+    if (JSON.stringify(incoming) === JSON.stringify(blocksRef.current)) return;
+    blocksRef.current = incoming; setBlocks(incoming);
+    setSelectedBlockIds(ids => ids.filter(id => incoming.some(block => block.id === id)));
+    if (typingTimerRef.current) { clearTimeout(typingTimerRef.current); typingTimerRef.current = null; }
+  }, [controlledBlocks]);
+
   // 撤销 (Undo)
   const handleUndo = useCallback(() => {
+    const binding = editorBinding(documentId); if (binding) { binding.undo(); return; }
     if (historyIndexRef.current > 0) {
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);
@@ -220,6 +234,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   // 重做 (Redo)
   const handleRedo = useCallback(() => {
+    const binding = editorBinding(documentId); if (binding) { binding.redo(); return; }
     if (historyIndexRef.current < historyRef.current.length - 1) {
       if (typingTimerRef.current) {
         clearTimeout(typingTimerRef.current);

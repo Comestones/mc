@@ -1,4 +1,5 @@
 import React from 'react';
+import { PageTitleInput } from '../components/editor/PageTitleInput';
 import {
   Image as ImageIcon,
   Smile,
@@ -32,10 +33,6 @@ export const DocumentPage: React.FC = () => {
       </div>
     );
   }
-
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updatePage(doc.id, { title: e.target.value });
-  };
 
   const handleSelectIcon = (icon: string) => {
     updatePage(doc.id, { icon });
@@ -112,13 +109,7 @@ export const DocumentPage: React.FC = () => {
           )}
 
           {/* 页面大标题输入框 */}
-          <input
-            type="text"
-            value={doc.title}
-            onChange={handleTitleChange}
-            placeholder="无标题页面"
-            className="w-full text-3xl sm:text-4xl font-bold bg-transparent text-text-primary-light dark:text-text-primary-dark placeholder:text-text-muted-light/40 dark:placeholder:text-text-muted-dark/40 outline-none tracking-tight py-1"
-          />
+          <PageTitleInput pageId={doc.id} value={doc.title} onChange={value => updatePage(doc.id, { title: value })} />
 
           {/* 页面时间元信息 */}
           <div className="flex items-center gap-4 text-xs text-text-muted-light dark:text-text-muted-dark mt-2 pb-4 border-b border-border-light/60 dark:border-border-dark/60">
@@ -137,7 +128,7 @@ export const DocumentPage: React.FC = () => {
         <BlockEditor
           key={doc.id}
           documentId={doc.id}
-          initialBlocks={doc.blocks}
+          blocks={doc.blocks}
         />
       </div>
     </div>

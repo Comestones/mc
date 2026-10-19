@@ -1,3 +1,5 @@
+import { rebaseComposition } from '../../collaboration/editorBridge';
+import { mapTextOffset } from '../../collaboration/selectionUtils';
 import React, { useRef, useEffect, useLayoutEffect } from 'react';
 import { BlockType } from '../../types/document';
 import { cn } from '../../utils/cn';
@@ -138,14 +140,24 @@ export const TextBlock: React.FC<TextBlockProps> = ({
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+  const latestContentRef = useRef(content); latestContentRef.current = content;
+  const compositionBaseRef = useRef(content);
 
   // 同步外部 content 变更（避免在用户输入期间覆盖导致光标跳跃）
   useEffect(() => {
-    if (!contentRef.current) return;
+    if (!contentRef.current || isComposingRef.current) return;
+    const root = contentRef.current;
+    const selection = window.getSelection();
+    const focused = document.activeElement === root && selection && selection.rangeCount > 0 && root.contains(selection.anchorNode);
+    const before = root.textContent ?? '';
+    const start = focused ? getCaretOffset(root) : 0;
+    const endRange = focused ? selection.getRangeAt(0).cloneRange() : null;
+    let end = start;
+    if (endRange) { const prefix = endRange.cloneRange(); prefix.selectNodeContents(root); prefix.setEnd(endRange.endContainer, endRange.endOffset); end = prefix.toString().length; }
     const hasHtml = /<[a-z][\s\S]*>/i.test(content);
     if (hasHtml) {
-      if (contentRef.current.innerHTML !== content) {
-        contentRef.current.innerHTML = content;
+      if (contentRef.current.innerHTML !== sanitizeHtml(content)) {
+        contentRef.current.innerHTML = sanitizeHtml(content);
       }
     } else {
       const currentText = contentRef.current.innerText ?? contentRef.current.textContent ?? '';
@@ -157,8 +169,14 @@ export const TextBlock: React.FC<TextBlockProps> = ({
       }
     }
     // 确保空内容时 DOM 干净以便匹配 :empty 伪类
-    if (!content) {
-      contentRef.current.innerHTML = '';
+    if (!content) { contentRef.current.innerHTML = ''; }
+    const after = root.textContent ?? '';
+    if (focused) {
+      setCaretOffset(root, mapTextOffset(before, after, start));
+      const first = window.getSelection()?.getRangeAt(0).cloneRange();
+      setCaretOffset(root, mapTextOffset(before, after, end));
+      const last = window.getSelection()?.getRangeAt(0);
+      if (first && last) { first.setEnd(last.endContainer, last.endOffset); selection.removeAllRanges(); selection.addRange(first); }
     }
   }, [content]);
 
@@ -202,6 +220,7 @@ export const TextBlock: React.FC<TextBlockProps> = ({
   };
 
   const handleCompositionStart = () => {
+    compositionBaseRef.current = latestContentRef.current;
     isComposingRef.current = true;
   };
 
@@ -211,7 +230,12 @@ export const TextBlock: React.FC<TextBlockProps> = ({
     const hasHtml = /<[a-z][\s\S]*>/i.test(el.innerHTML);
     const val = hasHtml ? sanitizeHtml(el.innerHTML) : (el.innerText ?? el.textContent ?? '');
     const cleaned = val === '<br>' ? '' : val;
-    onChange(cleaned);
+    const merged = rebaseComposition(id, compositionBaseRef.current, cleaned);
+    onChange(merged);
+    if (merged !== cleaned) {
+      if (/<[a-z][\s\S]*>/i.test(merged)) el.innerHTML = sanitizeHtml(merged); else el.textContent = merged;
+      setCaretOffset(el, 'end');
+    }
     checkSlashCommand(el);
   };
 

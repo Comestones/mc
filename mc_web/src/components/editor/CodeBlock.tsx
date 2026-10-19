@@ -1,3 +1,5 @@
+import { mapTextOffset } from '../../collaboration/selectionUtils';
+import { rebaseComposition } from '../../collaboration/editorBridge';
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { Copy, Check, WrapText } from 'lucide-react';
 import Prism from 'prismjs';
@@ -96,18 +98,33 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
   const isComposingRef = useRef(false);
+  const compositionBaseRef = useRef(content);
+  const previousContentRef = useRef(content);
+  const selectionRef = useRef({ start: 0, end: 0 });
+  const [compositionDraft, setCompositionDraft] = useState<string | null>(null);
 
   const safeLanguage = normalizeCodeLanguage(language);
 
   // 输入法合成期状态管理
   const handleCompositionStart = () => {
+    compositionBaseRef.current = content;
+    setCompositionDraft(textareaRef.current?.value ?? content);
     isComposingRef.current = true;
   };
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
     isComposingRef.current = false;
-    onChange(e.currentTarget.value);
+    const merged = rebaseComposition(id, compositionBaseRef.current, e.currentTarget.value);
+    setCompositionDraft(null); onChange(merged);
   };
+
+  useLayoutEffect(() => {
+    const input = textareaRef.current;
+    if (input && document.activeElement === input && !isComposingRef.current && previousContentRef.current !== content) {
+      input.setSelectionRange(mapTextOffset(previousContentRef.current, content, selectionRef.current.start), mapTextOffset(previousContentRef.current, content, selectionRef.current.end));
+    }
+    previousContentRef.current = content;
+  }, [content]);
 
   // 自动根据内容伸缩高度
   const adjustHeight = () => {
@@ -398,11 +415,12 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
         {/* 表层原生多行可编辑 Textarea */}
         <textarea
           ref={textareaRef}
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
+          value={compositionDraft ?? content}
+          onChange={(e) => { if (isComposingRef.current) setCompositionDraft(e.target.value); else { previousContentRef.current = e.target.value; onChange(e.target.value); } }}
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
+          onSelect={event => { selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }}
           onScroll={handleScroll}
           aria-label="代码编辑区"
           spellCheck={false}

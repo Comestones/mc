@@ -1,4 +1,4 @@
-# mc_sync · Day 15 协同通道
+# mc_sync · Day 15～16 协同通道与页面编辑器
 
 要求 Node.js >= 22。使用与前端配套的 Hocuspocus 4.7.1 / Yjs 13.6.33。
 
@@ -38,7 +38,7 @@ npm --prefix mc_web run dev
 - 房间名：`mc/v1/<encodeURIComponent(workspaceId)>/<encodeURIComponent(pageId)>`。服务端校验规范编码、长度及控制字符；不同工作区和页面隔离。
 - 前端等待本地 hydration 完成且页面存在后连接。切页、换工作区、删当前页、卸载及 StrictMode 重挂载时清理 Provider、WebSocket、Y.Doc 和事件监听。
 - Provider 每 15 秒主动同步以维持消息活动；45 秒无消息时重建连接。连接失败按 1～30 秒指数退避并加入随机抖动，无限重试；浏览器 offline 事件主动断开，online 恢复连接。
-- WebSocket 连接建立与房间初始同步分开判断；状态指示只表示传输通道就绪。**当前编辑器和多维数据库内容依旧仅走本地 Store/IndexedDB，未绑定 Y.Doc**，分别由 Day 16 / Day 18 接入。状态提示不会宣称内容已同步。
+- WebSocket 连接建立与房间初始同步分开判断；状态指示只表示传输通道就绪。**Day 16 已绑定页面标题与正文**；数据库单元格仍走本地 Store/IndexedDB，由 Day 18 接入。绑定就绪后显示“协同编辑已连接”。
 - 文档只存在服务端内存；最后连接离开后可能卸载，服务重启丢失内存。测试中的重启补发依赖客户端 Y.Doc 仍存活，不代表已交付离线缓存。Day 19 持久化、Day 20 y-indexeddb 在后续实现。
 - 默认单条 WebSocket 消息上限 1MiB；大文档传输限制应在后续容量测试中调整。
 - SIGINT/SIGTERM 停服会关闭文档会话及升级的 TCP 连接。端口被占用时明确失败退出。
@@ -47,6 +47,7 @@ npm --prefix mc_web run dev
 
 ```powershell
 npm --prefix mc_web run verify:day15
+npm --prefix mc_web run verify:day16
 npm --prefix mc_web test
 npm --prefix mc_web run build
 ```
@@ -54,3 +55,14 @@ npm --prefix mc_web run build
 专项入口同时运行 7 项 React 生命周期/状态测试、生产客户端的 6 项真实通道测试，以及 3 项服务端配置/HTTP/Origin/端口冲突测试。真实通道测试使用独立子进程服务与临时端口，不会连接外部服务；包括两客户端双向 Yjs 更新、房间隔离、断线重连、服务重启、服务迟到、心跳超时、重复 online/快速上下线竞态和销毁清理。
 
 API 依据：[服务端配置](https://tiptap.dev/docs/hocuspocus/server/configuration)、[Provider 配置](https://tiptap.dev/docs/hocuspocus/provider/configuration)。
+
+
+## Day 16 页面数据协议与验证
+
+页面使用 page 根 Map：schema=1、seedSource、title(Y.Text)、nodes(Y.Map)、order(Y.Array)。每个节点包含 type、content(Y.Text)、properties(Y.Map) 和 children(Y.Array ID)。顺序与节点实体分离，重排不重建文本，投影去重；删除节点优先于对旧节点的并发写入。
+
+首连完成后客户端发送 initialize-page stateless 请求。空房间只接受首个合法快照，已有房间忽略后续初始化提案；迟到客户端采用共享内容，握手期间本地修改按差异合并。标题/正文在本地 Store、Yjs 和 DOM 之间双向映射，远端反射不会形成回写循环；本人事务进入独立 Y.UndoManager，初始化和他人事务不进入本人历史。
+
+verify:day16 包含 10 项组件测试、8 项独立进程/双客户端真实 Yjs 通信测试，并执行服务端测试（5 项，含 2 项新增初始化校验）。验收包括并发输入、结构变化、选择性撤销/重做、迟到快照、握手缓冲、页面隔离、Emoji、IME、选区、安全显示与自动保存恢复。
+
+当前正文行内格式使用 HTML 字符串而非语义化 Yjs 格式标记，客户端渲染前清洗。页面树、图标、封面、数据库单元格尚未同步。未同步 CRDT 变更只在存活会话中缓存，切页销毁或关闭浏览器后恢复未同步变更仍需 Day 20 的 y-indexeddb；不要将普通 JSON 本地快照误当作完整 CRDT 历史。服务器内存数据仍可能在最后用户离开或重启时丢失，Day 19 将补齐快照持久化。

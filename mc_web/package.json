@@ -22,7 +22,8 @@
     "verify:day12": "vitest run src/test/DatabaseBoard.test.tsx",
     "verify:day11": "vitest run src/test/BlockEditor.test.tsx && node scripts/verify-day11.mjs",
     "verify:day14": "vitest run src/test/DatabaseQuery.test.tsx && node scripts/verify-day14.mjs",
-    "verify:day15": "vitest run src/test/Collaboration.test.tsx && node --test scripts/verify-day15.mjs && npm --prefix ../mc_sync test"
+    "verify:day15": "vitest run src/test/Collaboration.test.tsx && node --test scripts/verify-day15.mjs && npm --prefix ../mc_sync test",
+    "verify:day16": "vitest run src/test/CollaborativeEditor.test.tsx && node --test scripts/verify-day16.mjs && npm --prefix ../mc_sync test"
   },
   "dependencies": {
     "@hocuspocus/provider": "4.7.1",
