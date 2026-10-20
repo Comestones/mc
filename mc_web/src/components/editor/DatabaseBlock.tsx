@@ -1,4 +1,5 @@
 import React from 'react';
+import { DatabaseCollaborationStatus } from '../common/DatabaseCollaborationStatus';
 import {
   AlertCircle,
   Plus,
@@ -93,11 +94,13 @@ export const DatabaseBlock: React.FC<DatabaseBlockProps> = ({
             data-testid="database-title-input"
             value={database.title}
             onChange={(e) => updateDatabase(database.id, { title: e.target.value })}
+            aria-label="数据库标题"
             placeholder="无标题数据库"
             className="font-semibold text-sm text-text-primary-light dark:text-text-primary-dark bg-transparent border-none outline-none focus:ring-1 focus:ring-blue-500/50 rounded px-1.5 py-0.5"
           />
         </div>
 
+        <DatabaseCollaborationStatus databaseId={database.id} />
         {/* 字段与记录数徽标 */}
         <div className="flex items-center gap-2 text-xs text-text-muted-light dark:text-text-muted-dark">
           <span

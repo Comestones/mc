@@ -3,11 +3,11 @@ import * as Y from 'yjs';
 
 export type ChannelStatus = 'disabled' | 'connecting' | 'connected' | 'disconnected' | 'error';
 export interface ChannelState { status: ChannelStatus; synced: boolean }
-export function roomName(workspaceId: string, pageId: string): string {
+export function roomName(workspaceId: string, pageId: string, kind: 'page' | 'database' = 'page'): string {
   for (const id of [workspaceId, pageId]) {
     if (!id || id.length > 128 || /[\u0000-\u001f\u007f]/.test(id)) throw new Error('Invalid collaboration room ID');
   }
-  return `mc/v1/${encodeURIComponent(workspaceId)}/${encodeURIComponent(pageId)}`;
+  return `${kind === 'database' ? 'mc/db/v1' : 'mc/v1'}/${encodeURIComponent(workspaceId)}/${encodeURIComponent(pageId)}`;
 }
 export function collaborationUrl(value: string | undefined): string | null {
   if (!value?.trim()) return null;
@@ -19,13 +19,14 @@ export interface SessionOptions {
   url: string;
   workspaceId: string;
   pageId: string;
+  kind?: 'page' | 'database';
   onState: (state: ChannelState) => void;
   // Injectable only for transport tests; production uses the native browser WebSocket.
   forceSyncInterval?: number | false;
   socketOptions?: Partial<ConstructorParameters<typeof HocuspocusProviderWebsocket>[0]>;
 }
 export function createCollaborationSession(options: SessionOptions) {
-  const name = roomName(options.workspaceId, options.pageId);
+  const name = roomName(options.workspaceId, options.pageId, options.kind);
   const url = collaborationUrl(options.url);
   if (!url) throw new Error('Collaboration URL is required');
   let disposed = false;
@@ -42,7 +43,7 @@ export function createCollaborationSession(options: SessionOptions) {
     ...options.socketOptions,
   });
   const provider = new HocuspocusProvider({
-    websocketProvider: socket, name, document, forceSyncInterval: options.forceSyncInterval ?? 15000,
+    websocketProvider: socket, name, document, awareness: options.kind === 'database' ? null : undefined, forceSyncInterval: options.forceSyncInterval ?? 15000,
     onStatus: ({ status }) => {
       publish(status);
       if (status === 'disconnected' && connectAfterClose) {

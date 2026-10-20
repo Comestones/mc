@@ -81,6 +81,7 @@ interface WorkspaceState {
 
   // Day 8: 多维数据库数据层
   databases: Record<string, DatabaseSchema>;
+  applyCollaborativeDatabase: (id: string, value: DatabaseSchema | null) => void;
   createDatabase: (title?: string, initialProperties?: DatabaseProperty[]) => string;
   updateDatabase: (id: string, updates: DatabaseMetaUpdates) => void;
   updateDatabaseViewConfig: (id: string, updates: DatabaseViewConfigUpdates) => void;
@@ -538,6 +539,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     // Day 8: 多维数据库数据层状态与 CRUD 操作
     databases: INITIAL_DATABASES,
+    applyCollaborativeDatabase: (id, value) => {
+      set(state => {
+        const databases = { ...state.databases };
+        if (!value) delete databases[id];
+        else {
+          // View, query and gallery preferences belong to this browser, not the shared document.
+          const local = state.databases[id]?.viewConfig;
+          const merged = local ? { ...value, viewConfig: local } : value;
+          databases[id] = normalizeDatabaseSchema(merged);
+        }
+        return { databases };
+      });
+      scheduleAutoSave(get, set, false);
+    },
 
     createDatabase: (title = '未命名数据库', initialProperties?: DatabaseProperty[]) => {
       const db = createDatabase(title, initialProperties);

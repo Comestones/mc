@@ -26,28 +26,28 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
 
   const [activeDetailRowId, setActiveDetailRowId] = useState<string | null>(null);
 
-  // Track identity rather than result indexes so sorting cannot move an editor to another row.
-  const [focusedPosition, setFocusedPosition] = useState<{ rowId: string; colIndex: number } | null>(null);
-  const [editingPosition, setEditingPosition] = useState<{ rowId: string; colIndex: number } | null>(null);
+  // Track row and property identity so remote sorting/reordering cannot move an active editor.
+  const [focusedPosition, setFocusedPosition] = useState<{ rowId: string; propertyId: string } | null>(null);
+  const [editingPosition, setEditingPosition] = useState<{ rowId: string; propertyId: string } | null>(null);
   const focusedIndex = focusedPosition ? rowOrder.indexOf(focusedPosition.rowId) : -1;
   const editingIndex = editingPosition ? rowOrder.indexOf(editingPosition.rowId) : -1;
-  const focusedCell = focusedPosition && focusedIndex >= 0 ? { rowIndex: focusedIndex, colIndex: focusedPosition.colIndex } : null;
-  const editingCell = editingPosition && editingIndex >= 0 ? { rowIndex: editingIndex, colIndex: editingPosition.colIndex } : null;
+  const focusedCell = focusedPosition && focusedIndex >= 0 && propertyOrder.includes(focusedPosition.propertyId) ? { rowIndex: focusedIndex, colIndex: propertyOrder.indexOf(focusedPosition.propertyId) } : null;
+  const editingCell = editingPosition && editingIndex >= 0 && propertyOrder.includes(editingPosition.propertyId) ? { rowIndex: editingIndex, colIndex: propertyOrder.indexOf(editingPosition.propertyId) } : null;
   const tableRef = useRef<HTMLDivElement>(null);
 
   // 实时调整列宽的临时状态（键为 propId，值为像素宽度）
   const [resizingWidths, setResizingWidths] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    if (focusedPosition && !rowOrder.includes(focusedPosition.rowId)) setFocusedPosition(null);
-    if (editingPosition && !rowOrder.includes(editingPosition.rowId)) setEditingPosition(null);
-  }, [rowOrder, focusedPosition, editingPosition]);
+    if (focusedPosition && (!rowOrder.includes(focusedPosition.rowId) || !propertyOrder.includes(focusedPosition.propertyId))) setFocusedPosition(null);
+    if (editingPosition && (!rowOrder.includes(editingPosition.rowId) || !propertyOrder.includes(editingPosition.propertyId))) setEditingPosition(null);
+  }, [rowOrder, propertyOrder, focusedPosition, editingPosition]);
 
   const prevRowCountRef = useRef(totalRows);
 
   // 监听行数增加，自动聚焦到新添加行的标题列
   useEffect(() => {
-    if (totalRows > prevRowCountRef.current) {
+    if (totalRows > prevRowCountRef.current && !editingPosition) {
       const lastId = useWorkspaceStore.getState().databases[databaseId]?.rowOrder.at(-1);
       const newRowIdx = lastId ? rowOrder.indexOf(lastId) : -1;
       if (newRowIdx < 0) { prevRowCountRef.current = totalRows; return; }
@@ -55,10 +55,10 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
         (pid) => properties[pid]?.type === 'title'
       );
       const targetColIdx = titleColIdx >= 0 ? titleColIdx : 0;
-      setFocusedPosition({ rowId: rowOrder[newRowIdx], colIndex: targetColIdx });
+      setFocusedPosition({ rowId: rowOrder[newRowIdx], propertyId: propertyOrder[targetColIdx] });
     }
     prevRowCountRef.current = totalRows;
-  }, [totalRows, rowOrder, databaseId, propertyOrder, properties]);
+  }, [totalRows, rowOrder, databaseId, propertyOrder, properties, editingPosition]);
 
   const handleColumnResizing = useCallback((propId: string, width: number | null) => {
     setResizingWidths((prev) => {
@@ -74,13 +74,13 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
 
   const handleFocusCell = useCallback((rowIndex: number, colIndex: number) => {
     setEditingPosition(null);
-    setFocusedPosition({ rowId: rowOrder[rowIndex], colIndex });
-  }, [rowOrder]);
+    setFocusedPosition({ rowId: rowOrder[rowIndex], propertyId: propertyOrder[colIndex] });
+  }, [rowOrder, propertyOrder]);
 
   const handleStartEdit = useCallback((rowIndex: number, colIndex: number) => {
-    setFocusedPosition({ rowId: rowOrder[rowIndex], colIndex });
-    setEditingPosition({ rowId: rowOrder[rowIndex], colIndex });
-  }, [rowOrder]);
+    setFocusedPosition({ rowId: rowOrder[rowIndex], propertyId: propertyOrder[colIndex] });
+    setEditingPosition({ rowId: rowOrder[rowIndex], propertyId: propertyOrder[colIndex] });
+  }, [rowOrder, propertyOrder]);
 
   const handleStopEdit = useCallback(() => {
     setEditingPosition(null);
@@ -90,7 +90,7 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
     (direction: 'up' | 'down' | 'left' | 'right' | 'next' | 'prev') => {
       setFocusedPosition((prev) => {
         const currentR = Math.max(0, prev ? rowOrder.indexOf(prev.rowId) : 0);
-        const currentC = prev?.colIndex ?? 0;
+        const currentC = Math.max(0, prev ? propertyOrder.indexOf(prev.propertyId) : 0);
         const numRows = rowOrder.length;
         const numCols = propertyOrder.length;
 
@@ -130,11 +130,11 @@ export const DatabaseTable: React.FC<DatabaseTableProps> = ({ databaseId }) => {
             break;
         }
 
-        return { rowId: rowOrder[nextR], colIndex: nextC };
+        return { rowId: rowOrder[nextR], propertyId: propertyOrder[nextC] };
       });
       setEditingPosition(null);
     },
-    [rowOrder, propertyOrder.length]
+    [rowOrder, propertyOrder]
   );
 
   const handleAddRow = () => {

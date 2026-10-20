@@ -54,6 +54,13 @@ export const TableCell: React.FC<TableCellProps> = ({
   const addDatabaseSelectOption = useWorkspaceStore((state) => state.addDatabaseSelectOption);
 
   const cellRef = useRef<HTMLTableCellElement>(null);
+  // Keep the draft's starting value stable while remote updates arrive.
+  const edit = useRef({ active: false, value: cellValue, type: property?.type });
+  if (!isEditing || !edit.current.active) edit.current = { active: isEditing, value: cellValue, type: property?.type };
+  const editValue = edit.current.value;
+  useEffect(() => {
+    if (isEditing && edit.current.type !== property?.type) onStopEdit();
+  }, [isEditing, property?.type, onStopEdit]);
 
   const isEditable =
     property?.type === 'title' ||
@@ -73,7 +80,8 @@ export const TableCell: React.FC<TableCellProps> = ({
 
   const handleCommit = useCallback(
     (val: any) => {
-      updateDatabaseCell(databaseId, rowId, propertyId, val);
+      const currentType = useWorkspaceStore.getState().databases[databaseId]?.properties[propertyId]?.type;
+      if (currentType === edit.current.type) updateDatabaseCell(databaseId, rowId, propertyId, val);
       onStopEdit();
     },
     [databaseId, rowId, propertyId, updateDatabaseCell, onStopEdit]
@@ -310,7 +318,7 @@ export const TableCell: React.FC<TableCellProps> = ({
       case 'date':
         return (
           <DateCellEditor
-            value={typeof cellValue === 'string' ? cellValue : null}
+            value={typeof editValue === 'string' ? editValue : null}
             onCommit={(val) => handleCommit(val)}
             onCancel={onStopEdit}
             onNavigate={onNavigate}
@@ -320,7 +328,7 @@ export const TableCell: React.FC<TableCellProps> = ({
       case 'url':
         return (
           <UrlCellEditor
-            value={typeof cellValue === 'string' ? cellValue : null}
+            value={typeof editValue === 'string' ? editValue : null}
             onCommit={(val) => handleCommit(val)}
             onCancel={onStopEdit}
             onNavigate={onNavigate}
@@ -330,7 +338,7 @@ export const TableCell: React.FC<TableCellProps> = ({
       case 'number':
         return (
           <NumberCellEditor
-            value={typeof cellValue === 'number' ? cellValue : null}
+            value={typeof editValue === 'number' ? editValue : null}
             onCommit={(val) => handleCommit(val)}
             onCancel={onStopEdit}
             onNavigate={onNavigate}
@@ -344,7 +352,7 @@ export const TableCell: React.FC<TableCellProps> = ({
               {renderFormattedValue()}
             </div>
             <SelectCellEditor
-              value={cellValue as string | null}
+              value={editValue as string | null}
               options={property.options || []}
               onCommit={(val) => handleCommit(val)}
               onCancel={onStopEdit}
@@ -361,7 +369,7 @@ export const TableCell: React.FC<TableCellProps> = ({
               {renderFormattedValue()}
             </div>
             <MultiSelectCellEditor
-              value={Array.isArray(cellValue) ? cellValue : []}
+              value={Array.isArray(editValue) ? editValue : []}
               options={property.options || []}
               onCommit={(val) => handleCommit(val)}
               onCancel={onStopEdit}
@@ -376,7 +384,7 @@ export const TableCell: React.FC<TableCellProps> = ({
       default:
         return (
           <TextCellEditor
-            value={cellValue !== undefined && cellValue !== null ? String(cellValue) : ''}
+            value={editValue !== undefined && editValue !== null ? String(editValue) : ''}
             onCommit={(val) => handleCommit(val)}
             onCancel={onStopEdit}
             onNavigate={onNavigate}

@@ -1,3 +1,4 @@
+import { seedDatabase } from './databaseSeed.mjs';
 import { seedPage } from './pageSeed.mjs';
 import { Server } from '@hocuspocus/server';
 
@@ -22,8 +23,10 @@ export function readConfig(env = process.env) {
 export function validRoom(name) {
   if (typeof name !== 'string' || name.length > 1024) return false;
   const parts = name.split('/');
-  if (parts.length !== 4 || parts[0] !== 'mc' || parts[1] !== 'v1') return false;
-  return parts.slice(2).every(part => {
+  const start = parts.length === 4 && parts[0] === 'mc' && parts[1] === 'v1' ? 2
+    : parts.length === 5 && parts[0] === 'mc' && parts[1] === 'db' && parts[2] === 'v1' ? 3 : 0;
+  if (!start) return false;
+  return parts.slice(start).every(part => {
     try {
       const decoded = decodeURIComponent(part);
       return decoded.length > 0 && decoded.length <= 128 && !/[\u0000-\u001f\u007f]/.test(decoded) && encodeURIComponent(decoded) === part;
@@ -47,8 +50,12 @@ export function createSyncServer(options = {}) {
       if (!validRoom(documentName)) throw new Error('Invalid mc room');
       // Local development transport only. Account authentication is a later milestone.
     },
-    async onStateless({ document, payload }) {
-      try { seedPage(document, JSON.parse(payload)); } catch { /* Ignore malformed initialization requests. */ }
+    async onStateless({ document, documentName, payload }) {
+      try {
+        const request = JSON.parse(payload);
+        if (documentName.startsWith('mc/db/v1/')) seedDatabase(document, request, decodeURIComponent(documentName.split('/')[4]));
+        else seedPage(document, request);
+      } catch { /* Ignore malformed initialization requests. */ }
     },
     async onRequest({ request, response }) {
       const healthy = request.method === 'GET' && request.url === '/healthz';
