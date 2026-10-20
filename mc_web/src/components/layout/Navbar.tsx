@@ -1,4 +1,5 @@
 import React from 'react';
+import { OnlineMembers } from '../common/OnlineMembers';
 import { CollaborationStatus } from '../common/CollaborationStatus';
 import {
   PanelLeft,
@@ -130,6 +131,7 @@ export const Navbar: React.FC = () => {
           )}
         </div>
 
+        <OnlineMembers />
         <CollaborationStatus />
 
         {/* 快捷搜索 */}

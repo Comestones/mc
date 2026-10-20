@@ -48,6 +48,7 @@ npm --prefix mc_web run dev
 ```powershell
 npm --prefix mc_web run verify:day15
 npm --prefix mc_web run verify:day16
+npm --prefix mc_web run verify:day17
 npm --prefix mc_web test
 npm --prefix mc_web run build
 ```
@@ -66,3 +67,12 @@ API 依据：[服务端配置](https://tiptap.dev/docs/hocuspocus/server/configu
 verify:day16 包含 10 项组件测试、8 项独立进程/双客户端真实 Yjs 通信测试，并执行服务端测试（5 项，含 2 项新增初始化校验）。验收包括并发输入、结构变化、选择性撤销/重做、迟到快照、握手缓冲、页面隔离、Emoji、IME、选区、安全显示与自动保存恢复。
 
 当前正文行内格式使用 HTML 字符串而非语义化 Yjs 格式标记，客户端渲染前清洗。页面树、图标、封面、数据库单元格尚未同步。未同步 CRDT 变更只在存活会话中缓存，切页销毁或关闭浏览器后恢复未同步变更仍需 Day 20 的 y-indexeddb；不要将普通 JSON 本地快照误当作完整 CRDT 历史。服务器内存数据仍可能在最后用户离开或重启时丢失，Day 19 将补齐快照持久化。
+
+
+## Day 17 在线感知
+
+启用上面的 VITE_COLLABORATION_URL 后，同一工作区、同一页面的成员会在顶栏显示头像及在线会话数。点击头像可修改访客昵称（最多 24 个 Unicode 字符），保存在当前浏览器中；已有其他标签页保持各自的当前昵称，新会话沿用最后保存值。每个 Provider 会话单独计数，无账户身份或访问权限含义。
+
+正文 contenteditable、标题 input 与代码 textarea 的插入点/单块选区通过 Awareness 共享。颜色由随机会话 ID 映射为预设色，光标携带 Yjs 相对位置，文字插入后仍跟随目标。渲染为独立覆盖层，不改动本人的选区；切页/断线退出，重连后重新续报。失焦、IME 合成期间、跨块选择和无法安全对应的内容不发布光标；数据库单元格及行详情不在本日范围。
+
+Awareness 不持久化、不写入 Y.Doc、不进入 UndoManager。Day 17 专项新增 12 项 UI/DOM 测试和 5 项真实双客户端测试，覆盖加入/改名/退出/重连、相对范围移动、房间隔离、异常状态、删除目标和监听清理；同时执行已有服务端 5 项回归。
