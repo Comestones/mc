@@ -1,3 +1,5 @@
+import { createPostgresStore } from './postgresStore.mjs';
+import { createPersistence } from './persistence.mjs';
 import { seedDatabase } from './databaseSeed.mjs';
 import { seedPage } from './pageSeed.mjs';
 import { Server } from '@hocuspocus/server';
@@ -18,6 +20,9 @@ export function readConfig(env = process.env) {
     catch { return true; }
   })) throw new Error('MC_SYNC_ORIGINS must contain exact HTTP(S) origins');
   return { address, port: integer(env.MC_SYNC_PORT, 1234, 1, 65535, 'MC_SYNC_PORT'),
+    databaseUrl: env.MC_SYNC_DATABASE_URL?.trim() || undefined,
+    debounce: integer(env.MC_SYNC_STORE_DEBOUNCE_MS, 500, 0, 60000, 'MC_SYNC_STORE_DEBOUNCE_MS'),
+    maxDebounce: integer(env.MC_SYNC_STORE_MAX_DEBOUNCE_MS, 5000, 1, 300000, 'MC_SYNC_STORE_MAX_DEBOUNCE_MS'),
     timeout: integer(env.MC_SYNC_TIMEOUT_MS, 60000, 1000, 300000, 'MC_SYNC_TIMEOUT_MS'), origins };
 }
 export function validRoom(name) {
@@ -34,10 +39,13 @@ export function validRoom(name) {
   });
 }
 export function createSyncServer(options = {}) {
-  const { origins = DEFAULT_ORIGINS, ...configuration } = options;
+  const { origins = DEFAULT_ORIGINS, databaseUrl, snapshotStore, persistenceRetryMs, ...configuration } = options;
+  const store = snapshotStore ?? (databaseUrl ? createPostgresStore({ url: databaseUrl }) : null);
+  const persistence = store ? createPersistence(store, { retryMs: persistenceRetryMs }) : null;
   const server = new Server({
     name: 'mc-sync', address: '127.0.0.1', port: 1234, timeout: 60000,
-    stopOnSignals: false, quiet: true, debounce: 100, maxDebounce: 1000,
+    stopOnSignals: false, quiet: true, debounce: 500, maxDebounce: 5000,
+    extensions: persistence ? [persistence.extension] : [],
     websocketOptions: { maxPayload: 1024 * 1024 },
     async onUpgrade({ request, socket }) {
       const origin = request.headers.origin;
@@ -59,8 +67,9 @@ export function createSyncServer(options = {}) {
     },
     async onRequest({ request, response }) {
       const healthy = request.method === 'GET' && request.url === '/healthz';
-      response.writeHead(healthy ? 200 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      response.end(JSON.stringify(healthy ? { status: 'ok', service: 'mc-sync', storage: 'memory', protocol: 'mc/v1' } : { error: 'Not found' }));
+      const state = healthy && persistence ? await persistence.health() : { healthy: true };
+      response.writeHead(healthy ? state.healthy ? 200 : 503 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      response.end(JSON.stringify(healthy ? { status: state.healthy ? 'ok' : 'degraded', service: 'mc-sync', storage: store?.kind ?? 'memory', protocol: 'mc/v1', ...(persistence ? { persistence: state } : {}) } : { error: 'Not found' }));
       throw null;
     },
     ...configuration,
@@ -71,12 +80,18 @@ export function createSyncServer(options = {}) {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
+  server.persistence = persistence;
   const destroy = server.destroy.bind(server);
   let shutdown;
   server.destroy = () => shutdown ??= (async () => {
+    if (persistence) {
+      server.hocuspocus.closeConnections();
+      await persistence.flush(server.hocuspocus.documents);
+    }
     await destroy();
     for (const socket of sockets) socket.destroy();
-  })();
+    await persistence?.close();
+  })().catch(error => { shutdown = undefined; throw error; });
   return server;
 }
 export async function listenSyncServer(server) {
@@ -84,7 +99,13 @@ export async function listenSyncServer(server) {
   const failed = new Promise((_, reject) => { rejectListen = reject; });
   const onError = error => rejectListen(error);
   server.httpServer.once('error', onError);
-  try { await Promise.race([server.listen(), failed]); }
+  try {
+    await server.persistence?.store.initialize();
+    await Promise.race([server.listen(), failed]);
+  } catch (error) {
+    if (!server.httpServer.listening) await server.persistence?.close();
+    throw error;
+  }
   finally { server.httpServer.off('error', onError); }
   return server;
 }

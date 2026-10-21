@@ -10,14 +10,17 @@
     "start": "node src/index.mjs",
     "dev": "node --watch src/index.mjs",
     "test": "node --test test/*.test.mjs",
-    "verify:day15": "npm test"
+    "verify:day15": "npm test",
+    "verify:day19": "npm test && node --test test/postgres.integration.mjs && node --test ../mc_web/scripts/verify-day19.mjs"
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.1",
+    "pg": "8.23.1",
     "yjs": "13.6.33"
   },
   "devDependencies": {
     "@hocuspocus/provider": "4.7.1",
+    "embedded-postgres": "18.4.0-beta.17",
     "ws": "^8.18.3",
     "y-protocols": "^1.0.6"
   }

@@ -6,6 +6,12 @@ import { createSyncServer, listenSyncServer, readConfig, validRoom } from '../sr
 test('configuration defaults, strict ranges, origins and encoded room contract', () => {
   assert.equal(readConfig({}).address, '127.0.0.1');
   assert.equal(readConfig({}).port, 1234);
+  assert.equal(readConfig({}).databaseUrl, undefined);
+  assert.equal(readConfig({}).debounce, 500);
+  assert.equal(readConfig({}).maxDebounce, 5000);
+  assert.equal(readConfig({ MC_SYNC_DATABASE_URL: '  postgresql://localhost/mc  ' }).databaseUrl, 'postgresql://localhost/mc');
+  assert.throws(() => readConfig({ MC_SYNC_STORE_DEBOUNCE_MS: '-1' }));
+  assert.throws(() => readConfig({ MC_SYNC_STORE_MAX_DEBOUNCE_MS: '0' }));
   for (const value of ['0', '-1', 'abc', '1234.5', '65536']) assert.throws(() => readConfig({ MC_SYNC_PORT: value }));
   assert.throws(() => readConfig({ MC_SYNC_TIMEOUT_MS: '100' }));
   assert.throws(() => readConfig({ MC_SYNC_ORIGINS: '*' }));
