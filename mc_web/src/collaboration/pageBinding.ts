@@ -37,6 +37,7 @@ export function bindPage(options: PageBindingOptions) {
   session.document.getMap('page').observeDeep(reflect);
   return {
     get ready() { return ready; },
+    restore() { if (!disposed) { synchronized = true; reflect(); } },
     synchronize() {
       if (disposed) return;
       synchronized = true;

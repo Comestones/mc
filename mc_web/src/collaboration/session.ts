@@ -1,3 +1,4 @@
+import { createOfflineCache, type CacheStatus } from './offlineCache.ts';
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 
@@ -21,6 +22,10 @@ export interface SessionOptions {
   pageId: string;
   kind?: 'page' | 'database';
   onState: (state: ChannelState) => void;
+  onLocalReady?: () => void;
+  onCacheState?: (state: CacheStatus) => void;
+  // Disable only in protocol tests; browsers cache by default when IndexedDB is available.
+  persistence?: boolean;
   // Injectable only for transport tests; production uses the native browser WebSocket.
   forceSyncInterval?: number | false;
   socketOptions?: Partial<ConstructorParameters<typeof HocuspocusProviderWebsocket>[0]>;
@@ -33,6 +38,7 @@ export function createCollaborationSession(options: SessionOptions) {
   let failed = false;
   let shouldConnect = false;
   let connectAfterClose = false;
+  let cacheLoaded = false;
   const publish = (status: ChannelStatus, synced = false) => {
     if (!disposed && !failed) options.onState({ status, synced });
   };
@@ -60,6 +66,7 @@ export function createCollaborationSession(options: SessionOptions) {
   const connect = () => {
     if (disposed || failed) return;
     shouldConnect = true;
+    if (cache && !cacheLoaded) { publish('connecting'); return; }
     if (socket.status === 'connected') {
       if (socket.webSocket?.readyState === 1) publish('connected', provider.synced);
       else connectAfterClose = true;
@@ -68,13 +75,31 @@ export function createCollaborationSession(options: SessionOptions) {
     publish('connecting');
     void socket.connect().catch(() => publish('disconnected'));
   };
+  let cache: ReturnType<typeof createOfflineCache> | undefined;
+  if (options.persistence !== false && typeof indexedDB !== 'undefined') {
+    cache = createOfflineCache(url, name, document, state => {
+      if (disposed) return;
+      options.onCacheState?.(state);
+      if (state === 'error') { publish('error'); failed = true; socket.disconnect(); }
+    });
+    void cache.ready.then(success => {
+      if (disposed) return;
+      if (!success) { publish('error'); return; }
+      cacheLoaded = true; options.onLocalReady?.();
+      if (shouldConnect) connect();
+    });
+  } else options.onCacheState?.('unavailable');
   return {
     document, provider, socket, connect,
+    cacheReady: cache?.ready ?? Promise.resolve(false),
+    flushCache: () => cache?.flush() ?? Promise.resolve(false),
     disconnect() { if (!disposed) { shouldConnect = false; connectAfterClose = false; socket.disconnect(); publish('disconnected'); } },
     destroy() {
       if (disposed) return;
       disposed = true;
+      const closing = cache?.destroy();
       provider.destroy(); socket.destroy(); document.destroy();
+      return closing;
     },
   };
 }

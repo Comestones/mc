@@ -1,3 +1,4 @@
+import type { CacheStatus } from './offlineCache';
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { useCollaborationStore } from './store';
@@ -24,12 +25,15 @@ export function referencedDatabases(blocks: BlockNode[] = [], databases: Record<
 }
 function DatabaseRoom({ databaseId, workspaceId, endpoint }: { databaseId: string; workspaceId: string; endpoint: string }) {
   useEffect(() => {
+    let cache: CacheStatus | undefined;
+    let transport: { status: 'disabled' | 'connecting' | 'connected' | 'disconnected' | 'error'; synced: boolean } = { status: 'disconnected', synced: false };
     let disposed = false, bound = false, binding: ReturnType<typeof bindDatabase> | undefined;
     const publish = (state: { status: 'disabled' | 'connecting' | 'connected' | 'disconnected' | 'error'; synced: boolean }) => {
       if (disposed) return;
-      useDatabaseChannelStore.setState(current => ({ channels: { ...current.channels, [databaseId]: { ...state, bound } } }));
+      transport = state;
+      useDatabaseChannelStore.setState(current => ({ channels: { ...current.channels, [databaseId]: { ...state, bound, cache } } }));
     };
-    const session = createCollaborationSession({ url: endpoint, kind: 'database', workspaceId, pageId: databaseId, onState: state => {
+    const session = createCollaborationSession({ url: endpoint, kind: 'database', workspaceId, pageId: databaseId, onLocalReady: () => binding?.restore(), onCacheState: state => { cache = state; publish(transport); }, onState: state => {
       publish(state); if (state.synced) binding?.synchronize();
     } });
     binding = bindDatabase({ session, databaseId,

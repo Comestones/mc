@@ -17,7 +17,7 @@ export function useCollaborationChannel(endpoint = import.meta.env.VITE_COLLABOR
   const pageExists = useWorkspaceStore(state => !!state.documents[state.activePageId]);
   useEffect(() => {
     const setState = useCollaborationStore.setState;
-    setState({ status: 'disabled', synced: false, pageBound: false, boundPageId: undefined, boundWorkspaceId: undefined, members: [], rename: undefined });
+    setState({ status: 'disabled', synced: false, pageBound: false, boundPageId: undefined, boundWorkspaceId: undefined, members: [], rename: undefined, cache: undefined });
     if (!hydrated || !pageExists) return;
     let session: ReturnType<typeof createCollaborationSession>;
     let binding: ReturnType<typeof bindPage> | undefined;
@@ -28,7 +28,7 @@ export function useCollaborationChannel(endpoint = import.meta.env.VITE_COLLABOR
     try {
       const url = collaborationUrl(endpoint);
       if (!url) return;
-      session = createCollaborationSession({ url, workspaceId, pageId: activePageId, onState: state => {
+      session = createCollaborationSession({ url, workspaceId, pageId: activePageId, onLocalReady: () => binding?.restore(), onCacheState: cache => setState({ cache }), onState: state => {
         setState(state);
         if (state.synced) binding?.synchronize();
         presence?.setConnected(state.synced && !!binding?.ready);
@@ -68,7 +68,7 @@ export function useCollaborationChannel(endpoint = import.meta.env.VITE_COLLABOR
       window.removeEventListener('online', online);
       window.removeEventListener('offline', offline);
       removePresenceDom?.(); presence?.destroy(); unsubscribe?.(); unregister?.(); binding?.destroy(); session.destroy();
-      setState({ status: 'disabled', synced: false, pageBound: false, boundPageId: undefined, boundWorkspaceId: undefined, members: [], rename: undefined });
+      setState({ status: 'disabled', synced: false, pageBound: false, boundPageId: undefined, boundWorkspaceId: undefined, members: [], rename: undefined, cache: undefined });
     };
   }, [endpoint, hydrated, workspaceId, activePageId, pageExists]);
 }

@@ -26,7 +26,8 @@
     "verify:day16": "vitest run src/test/CollaborativeEditor.test.tsx && node --test scripts/verify-day16.mjs && npm --prefix ../mc_sync test",
     "verify:day17": "vitest run src/test/Presence.test.tsx && node --test scripts/verify-day17.mjs && npm --prefix ../mc_sync test",
     "verify:day18": "vitest run src/test/CollaborativeDatabase.test.tsx && node --test scripts/verify-day18.mjs && npm --prefix ../mc_sync test",
-    "verify:day19": "npm --prefix ../mc_sync run verify:day19"
+    "verify:day19": "npm --prefix ../mc_sync run verify:day19",
+    "verify:day20": "vitest run src/test/OfflineCache.test.tsx && node --test --test-timeout=60000 scripts/verify-day20.mjs && npm --prefix ../mc_sync test"
   },
   "dependencies": {
     "@hocuspocus/provider": "4.7.1",
@@ -36,6 +37,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.6.0",
+    "y-indexeddb": "9.0.12",
     "y-protocols": "1.0.7",
     "yjs": "13.6.33",
     "zustand": "^4.5.5"
@@ -50,6 +52,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "fake-indexeddb": "6.2.6",
     "jsdom": "^30.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",

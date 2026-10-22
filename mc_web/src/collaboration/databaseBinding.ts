@@ -30,6 +30,7 @@ export function bindDatabase(options: {
   root.observeDeep(reflect);
   return {
     get ready() { return ready; },
+    restore() { if (!disposed) { synced = true; reflect(); } },
     synchronize() {
       if (disposed) return; synced = true;
       if (!root.has('schema')) { sent = getSnapshot(); if (sent) session.provider.sendStateless(JSON.stringify({ kind: 'initialize-database', source, database: sent })); }
