@@ -27,7 +27,9 @@
     "verify:day17": "vitest run src/test/Presence.test.tsx && node --test scripts/verify-day17.mjs && npm --prefix ../mc_sync test",
     "verify:day18": "vitest run src/test/CollaborativeDatabase.test.tsx && node --test scripts/verify-day18.mjs && npm --prefix ../mc_sync test",
     "verify:day19": "npm --prefix ../mc_sync run verify:day19",
-    "verify:day20": "vitest run src/test/OfflineCache.test.tsx && node --test --test-timeout=60000 scripts/verify-day20.mjs && npm --prefix ../mc_sync test"
+    "verify:day20": "vitest run src/test/OfflineCache.test.tsx && node --test --test-timeout=60000 scripts/verify-day20.mjs && npm --prefix ../mc_sync test",
+    "verify:day21": "node --test --test-timeout=100000 scripts/verify-day21.mjs && npm --prefix ../mc_sync test",
+    "benchmark:day21": "node scripts/run-day21-benchmark.mjs"
   },
   "dependencies": {
     "@hocuspocus/provider": "4.7.1",

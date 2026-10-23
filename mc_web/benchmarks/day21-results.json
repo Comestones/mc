@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-23T12:08:44.325Z",
+  "environment": {
+    "node": "v24.16.0",
+    "platform": "win32",
+    "arch": "x64",
+    "logicalCpus": 12,
+    "cpuModel": "AMD Ryzen 5 5600 6-Core Processor              ",
+    "postgresql": "18.4"
+  },
+  "seed": 2101,
+  "scenarios": [
+    {
+      "name": "online-event-storm",
+      "events": 30,
+      "initialSocketAttempts": 1,
+      "passed": true
+    },
+    {
+      "name": "offline-online-event-storm",
+      "events": 30,
+      "offlineAttempts": 4,
+      "testRetryMinMs": 50,
+      "testRetryMaxMs": 200,
+      "passed": true
+    },
+    {
+      "name": "bounded-multi-client-load",
+      "clients": 16,
+      "rooms": 4,
+      "workspaces": 2,
+      "pageEdits": 280,
+      "databaseEdits": 280,
+      "defaults": {
+        "forceSyncMs": 15000,
+        "watchdogMs": 45000,
+        "debounceMs": 500,
+        "maxDebounceMs": 5000
+      },
+      "testRetry": {
+        "minMs": 50,
+        "maxMs": 200,
+        "jitter": false
+      },
+      "faults": {
+        "oneWayDelayMs": [
+          40,
+          119
+        ],
+        "dropEveryNthFrame": 11,
+        "partition": true
+      },
+      "baselineConvergenceMs": 126,
+      "baselineDelivery": {
+        "samples": 480,
+        "p50Ms": 68.85,
+        "p95Ms": 104.37,
+        "maxMs": 110.91
+      },
+      "postFaultRepairMs": 13715,
+      "weakDelivery": {
+        "samples": 240,
+        "p50Ms": 15043.58,
+        "p95Ms": 15171.39,
+        "maxMs": 15195.65
+      },
+      "partitionRecoveryMs": 301,
+      "reconnectCycles": 3,
+      "relay": {
+        "accepted": 80,
+        "forwarded": 2011,
+        "dropped": 118,
+        "peakQueuedBytes": 6530,
+        "activeConnections": 0
+      },
+      "server": {
+        "beforeChurn": {
+          "type": "metrics",
+          "id": 1,
+          "documents": 4,
+          "connections": 16,
+          "stores": 8,
+          "rssBytes": 74203136,
+          "eventLoopP95Ms": 16.06
+        },
+        "during": {
+          "type": "metrics",
+          "id": 2,
+          "documents": 4,
+          "connections": 16,
+          "stores": 12,
+          "rssBytes": 79323136,
+          "eventLoopP95Ms": 16.06
+        },
+        "after": {
+          "type": "metrics",
+          "id": 5,
+          "documents": 0,
+          "connections": 0,
+          "stores": 12,
+          "rssBytes": 79331328,
+          "eventLoopP95Ms": 16.07
+        }
+      },
+      "freshDatabaseRecovery": true,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "sourceSHA256": {
+    "session": "6b231eb091dfb39580d887823958ad675ef8f225b8a02365b07a5a90dac6c865",
+    "scenario": "bb43b89b5f6d4f05dd869395072e9eee2468441a8f5cc3f0f43ad77cf53496c5",
+    "relay": "ec0b800ae13261159832e5a68eca534254ad202a046bcf0e74327ca38ff1ddee",
+    "fixture": "4bdc3d0bb3c9a1ea21d98f74c3c781bb239e451a459dc0d01204c43e8c8a69ce"
+  }
+}

@@ -1,4 +1,4 @@
-# mc_sync · Day 15～20 协同、快照与离线缓存
+# mc_sync · Day 15～21 协同、持久化与连接稳定性
 
 要求 Node.js >= 22。使用与前端配套的 Hocuspocus 4.7.1 / Yjs 13.6.33。
 
@@ -148,3 +148,12 @@ onLoadDocument 在握手初始化前读取快照；onStoreDocument 使用 Hocusp
 测试数据库正常清理改用自带 pg_ctl 的 fast 停机，故障注入用 immediate 停机；等待进程退出后才清理临时目录，避免 Windows 强杀遗留子进程和管道。专项命令有 60 秒测试超时，失败不会被当作通过。
 
 参考：[Yjs 离线支持](https://docs.yjs.dev/getting-started/allowing-offline-editing)、[y-indexeddb API 与实现](https://github.com/yjs/y-indexeddb)。
+
+
+## Day 21 连接稳定性与 Sprint 3 验收
+
+Session 对重复 online/connect 采用幂等处理：正在握手或退避中的自动重试由既有尝试负责，重复事件不再取消连接并重置退避；明确断开后的重新连接及已连接状态的重复通知仍正常处理。没有改变生产的 1～30 秒重试退避、15 秒同步或 45 秒 watchdog。
+
+`npm --prefix mc_web run verify:day21` 组合 3 项真实网络场景及当前服务端测试。`npm --prefix mc_web run benchmark:day21` 记录本机 16 客户端/4 房间的延迟、应用帧丢失、全黑洞及重连循环验收，校验 PostgreSQL 二进制状态与全新客户端恢复，报告源文件哈希、传播分位数、RSS、事件循环采样及资源归零。默认不开启生产诊断端点；IPC 度量仅位于 test/fixture-server.mjs。完整实测与限制见 [压测说明](../mc_web/benchmarks/README.md)。
+
+Sprint 3 已完成：可选传输通道 → 页面 CRDT 与本人撤销 → 成员/光标 → 数据库行列/单元格 → PostgreSQL 快照 → 客户端离线缓存 → 连接事件风暴修复与有限负载验证。下一阶段为用户、空间及会话鉴权。当前部署仍需遵守本机开发边界；页面树、完整语义富文本冲突、记录正文逐字协同、网页资源 Service Worker 和多服务实时广播尚未交付。本轮实测为功能与稳定性证据，不是生产容量或公网延迟承诺。

@@ -65,6 +65,7 @@ export function createCollaborationSession(options: SessionOptions) {
   provider.attach();
   const connect = () => {
     if (disposed || failed) return;
+    const alreadyRequested = shouldConnect;
     shouldConnect = true;
     if (cache && !cacheLoaded) { publish('connecting'); return; }
     if (socket.status === 'connected') {
@@ -72,6 +73,8 @@ export function createCollaborationSession(options: SessionOptions) {
       else connectAfterClose = true;
       return;
     }
+    // Repeated online events must not cancel an active handshake or reset retry backoff.
+    if (alreadyRequested && socket.shouldConnect) return;
     publish('connecting');
     void socket.connect().catch(() => publish('disconnected'));
   };
