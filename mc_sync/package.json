@@ -11,10 +11,13 @@
     "dev": "node --watch src/index.mjs",
     "test": "node --test test/*.test.mjs",
     "verify:day15": "npm test",
-    "verify:day19": "npm test && node --test --test-timeout=60000 test/postgres.integration.mjs && node --test --test-timeout=60000 ../mc_web/scripts/verify-day19.mjs"
+    "verify:day19": "npm test && node --test --test-timeout=60000 test/postgres.integration.mjs && node --test --test-timeout=60000 ../mc_web/scripts/verify-day19.mjs",
+    "verify:day22": "npm test && node --test --test-timeout=60000 test/auth.integration.mjs"
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.1",
+    "drizzle-orm": "0.45.4",
+    "jose": "6.2.13",
     "pg": "8.23.1",
     "yjs": "13.6.33"
   },

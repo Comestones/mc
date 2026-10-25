@@ -1,4 +1,4 @@
-# mc_sync · Day 15～21 协同、持久化与连接稳定性
+# mc_sync · Day 15～22 协同、持久化与会话鉴权
 
 要求 Node.js >= 22。使用与前端配套的 Hocuspocus 4.7.1 / Yjs 13.6.33。
 
@@ -25,6 +25,8 @@ npm --prefix mc_web run dev
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
+| MC_AUTH_MODE | local | local 仅允许 loopback；required 启用 PostgreSQL 会话与房间鉴权 |
+| MC_AUTH_SECRET | 未设置 | required 模式必需，至少 32 字节的随机秘密，仅存服务端环境 |
 | MC_SYNC_HOST | 127.0.0.1 | 监听地址 |
 | MC_SYNC_PORT | 1234 | 1～65535 的整数端口 |
 | MC_SYNC_TIMEOUT_MS | 60000 | 服务端健康检测超时，1000～300000ms |
@@ -34,7 +36,7 @@ npm --prefix mc_web run dev
 | MC_SYNC_STORE_MAX_DEBOUNCE_MS | 5000 | 持续编辑时最长调度等待，1～300000ms；不含 SQL 执行时间 |
 | VITE_COLLABORATION_URL | 未设置 | 前端 ws:// 或 wss:// 地址，不接受凭据、查询串、片段 |
 
-当前服务为本机开发通道，支持可配置 PostgreSQL 持久化，账户鉴权尚未实现。Origin 白名单是浏览器来源检查，不能代替鉴权；无 Origin 的 Node 诊断客户端可以连接。服务未配置通配 Origin。部署到其他主机前应在后续阶段完成账户授权与 TLS，并配置持久化数据库及备份。
+默认 local 模式是无账户的本机开发通道，非 loopback 监听会启动失败。Day 22 提供可选 required 后端鉴权，见下方接入契约；现有前端尚未提供登录/刷新接入。Origin 白名单只是来源检查，required 模式中的无 Origin 客户端同样必须提供有效令牌。远程部署应配置 TLS、持久化与备份，不能把 local 模式通过反向代理公开。
 
 ## 通道契约
 
@@ -157,3 +159,31 @@ Session 对重复 online/connect 采用幂等处理：正在握手或退避中�
 `npm --prefix mc_web run verify:day21` 组合 3 项真实网络场景及当前服务端测试。`npm --prefix mc_web run benchmark:day21` 记录本机 16 客户端/4 房间的延迟、应用帧丢失、全黑洞及重连循环验收，校验 PostgreSQL 二进制状态与全新客户端恢复，报告源文件哈希、传播分位数、RSS、事件循环采样及资源归零。默认不开启生产诊断端点；IPC 度量仅位于 test/fixture-server.mjs。完整实测与限制见 [压测说明](../mc_web/benchmarks/README.md)。
 
 Sprint 3 已完成：可选传输通道 → 页面 CRDT 与本人撤销 → 成员/光标 → 数据库行列/单元格 → PostgreSQL 快照 → 客户端离线缓存 → 连接事件风暴修复与有限负载验证。下一阶段为用户、空间及会话鉴权。当前部署仍需遵守本机开发边界；页面树、完整语义富文本冲突、记录正文逐字协同、网页资源 Service Worker 和多服务实时广播尚未交付。本轮实测为功能与稳定性证据，不是生产容量或公网延迟承诺。
+
+
+## Day 22 用户、空间模型与认证 API
+
+固定依赖 Drizzle ORM 0.45.4（node-postgres）和 jose 6.2.13。`src/auth/schema.mjs` 定义 User、Workspace、Membership、InviteToken、DocumentMeta、Session；`0001.sql` 是审核过的首版迁移，启动 required 服务时在 advisory lock + 事务内应用。迁移版本/规范化 LF 的 SHA-256 记录在 mc_auth_migrations，重复启动无损；已有版本摘要不符则拒绝启动。后续改表应新增迁移，不能改写已经部署的 0001.sql。
+
+用户 email 去首尾空白并转小写，数据库唯一且限制规范格式。密码使用随机盐 scrypt（N=32768,r=8,p=1），至少 12 字符、最多 1024 字节。is_admin 默认 false，保留给 Day 23 初始化；管理员身份不绕过空间成员校验。成员角色暂为 owner/editor，均有空间内编辑权限。InviteToken 仅建模（摘要、过期、次数、撤销），生成/消费接口留待 Day 24。DocumentMeta 以 workspace_id/kind/id 为复合主键，区分 page/database 并带删除标记；Yjs 正文仍在 mc_yjs_documents，账户迁移不改写历史快照。
+
+required 模式必须同时提供 MC_SYNC_DATABASE_URL、MC_AUTH_SECRET，错误配置或数据库/迁移失败不会降级为 local。秘密应由本机安全随机生成并保存在私有环境，不能使用示例密码或 VITE_* 变量。服务不会创建默认账户、空间，也不会把既有无主本地文档自动归属给第一个用户。DAY23 初始化向导将调用模型完成首次注册，已有数据归属需明确迁移流程。
+
+| 接口 | 输入 | 成功结果 |
+| --- | --- | --- |
+| POST /api/auth/login | JSON email/password | accessToken、expiresIn（900 秒）、refreshToken |
+| POST /api/auth/refresh | JSON refreshToken | 新 accessToken 与轮换后的 refreshToken |
+| GET /api/me | Authorization: Bearer accessToken | 当前用户公开字段及其工作区/角色 |
+| POST /api/auth/logout | Authorization: Bearer accessToken | 撤销当前 Session，返回 ok |
+
+只接受 Bearer 头或 Hocuspocus token 消息，不从 URL 接收凭据，不设置 Cookie。HTTP JSON 上限 4096 字节，响应 no-store，允许的浏览器 Origin 有精确 CORS 响应；无效登录统一 401，拒绝来源 403，依赖故障 503。单进程按直连 IP 限制 30 次 API 请求/分钟，最多 4 个处理中请求、1000 个限流条目；不信任 X-Forwarded-For。该限制不是分布式网关，代理场景需另配入口限制。
+
+JWT 固定 HS256、issuer=mc-sync、audience=mc-api，校验签名、类型、exp/iat/sub/sid，并逐次检查真实 Session 与用户禁用状态。Session 固定绝对有效期 7 天（数据库时间），刷新不延长该期限；刷新令牌为 32 字节随机值，数据库只存 SHA-256，一次性原子轮换，并发使用仅一次成功。旧 refreshToken 无法重放；accessToken 在 15 分钟内仍有效，但注销会令同一 Session 的所有访问令牌失效。秘密变更会使旧 JWT 失效；持有有效刷新令牌的客户端仍能换取新 JWT，如需全部退出还须撤销 Session。
+
+协同认证先查有效 Session，再查对应空间成员及未删除 DocumentMeta；客户端提供工作区 ID 不会自动创建成员关系。每条入站消息重验权限，防止已撤权的写入落入快照；被动连接每 5 秒重验一次，数据库查询/网络延迟另计，期间可能收到先前订阅的广播。访问令牌到期由独立定时器关闭连接。客户端需 refresh 后以新 token 重新建立 Provider；本日不支持连接内 tokenSync 延长授权。服务器关闭/连接离开会清理上述定时器。
+
+**前端接入边界**：DAY22 是后端模型与中间件交付，现有 mc_web 仍连接 local 模式，没有登录表单、账户切换或认证令牌缓存。required 模式会拒绝该匿名前端；不要为了演示而预置账户或把令牌写入 URL。后续账户界面接入前必须按可信用户隔离 JSON/CRDT 缓存、在注销/换用户时销毁连接，且不能将 local 模式缓存默认上传到新的账户空间。离线缓存不是服务端授权凭证。
+
+验证：`npm --prefix mc_sync run verify:day22`（13 项原有后端测试 + 9 项真实 PostgreSQL/HTTP/WebSocket 场景）。覆盖迁移与外键/唯一约束、密码、JWT 伪造/算法/受众/到期、并发刷新/重放、注销/禁用/会话过期、跨空间及 page/database 隔离、被动撤权、撤权写入不落盘、数据库停机拒绝/恢复及请求限流。用临时 PostgreSQL 18.4，不修改用户数据库。DAY22 无 UI 改动，不声称新增浏览器视觉验收。
+
+依据：[Drizzle PostgreSQL 模型](https://orm.drizzle.team/docs/sql-schema-declaration)、[Drizzle SQL 迁移工作流](https://orm.drizzle.team/docs/migrations)、[jose JWT 签名与校验](https://github.com/panva/jose)。

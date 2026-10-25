@@ -1,3 +1,5 @@
+import { createAuthService } from './auth/service.mjs';
+import { authHttp } from './auth/http.mjs';
 import { createPostgresStore } from './postgresStore.mjs';
 import { createPersistence } from './persistence.mjs';
 import { seedDatabase } from './databaseSeed.mjs';
@@ -19,7 +21,11 @@ export function readConfig(env = process.env) {
     try { const url = new URL(value); return !['http:', 'https:'].includes(url.protocol) || url.origin !== value; }
     catch { return true; }
   })) throw new Error('MC_SYNC_ORIGINS must contain exact HTTP(S) origins');
-  return { address, port: integer(env.MC_SYNC_PORT, 1234, 1, 65535, 'MC_SYNC_PORT'),
+  const authMode = env.MC_AUTH_MODE || 'local';
+  if (!['local', 'required'].includes(authMode)) throw new Error('MC_AUTH_MODE must be local or required');
+  if (authMode === 'local' && (!['127.0.0.1', '::1', 'localhost'].includes(address) || env.MC_AUTH_SECRET)) throw new Error('Local mode requires loopback and no authentication secret');
+  if (authMode === 'required' && (!env.MC_SYNC_DATABASE_URL || Buffer.byteLength(env.MC_AUTH_SECRET || '') < 32)) throw new Error('Required authentication needs PostgreSQL and a secret of at least 32 bytes');
+  return { authMode, authSecret: env.MC_AUTH_SECRET, address, port: integer(env.MC_SYNC_PORT, 1234, 1, 65535, 'MC_SYNC_PORT'),
     databaseUrl: env.MC_SYNC_DATABASE_URL?.trim() || undefined,
     debounce: integer(env.MC_SYNC_STORE_DEBOUNCE_MS, 500, 0, 60000, 'MC_SYNC_STORE_DEBOUNCE_MS'),
     maxDebounce: integer(env.MC_SYNC_STORE_MAX_DEBOUNCE_MS, 5000, 1, 300000, 'MC_SYNC_STORE_MAX_DEBOUNCE_MS'),
@@ -39,7 +45,13 @@ export function validRoom(name) {
   });
 }
 export function createSyncServer(options = {}) {
-  const { origins = DEFAULT_ORIGINS, databaseUrl, snapshotStore, persistenceRetryMs, ...configuration } = options;
+  const { origins = DEFAULT_ORIGINS, databaseUrl, snapshotStore, persistenceRetryMs, authMode = 'local', authSecret, ...configuration } = options;
+  if (!['local', 'required'].includes(authMode)) throw new Error('Invalid authentication mode');
+  if (authMode === 'local' && (authSecret || !['127.0.0.1', '::1', 'localhost'].includes(configuration.address || '127.0.0.1'))) throw new Error('Local mode requires loopback and no authentication secret');
+  const auth = authMode === 'required' ? createAuthService({ databaseUrl, secret: authSecret }) : null;
+  const handleAuth = auth ? authHttp(auth, origins) : null;
+  const authConnections = new Set();
+  const denied = { code: 4401, reason: 'Authorization expired or revoked' };
   const store = snapshotStore ?? (databaseUrl ? createPostgresStore({ url: databaseUrl }) : null);
   const persistence = store ? createPersistence(store, { retryMs: persistenceRetryMs }) : null;
   const server = new Server({
@@ -54,9 +66,32 @@ export function createSyncServer(options = {}) {
         throw null; // Hocuspocus hook contract: abort the default upgrade after writing response.
       }
     },
-    async onAuthenticate({ documentName }) {
+    async onAuthenticate({ documentName, token }) {
       if (!validRoom(documentName)) throw new Error('Invalid mc room');
-      // Local development transport only. Account authentication is a later milestone.
+      if (!auth) return;
+      try {
+        const identity = await auth.authenticate(token);
+        await auth.authorize(identity, documentName);
+        return { identity };
+      } catch { throw new Error('Unauthorized'); }
+    },
+    async beforeHandleMessage({ context, documentName }) {
+      if (auth) { try { await auth.authorize(context.identity, documentName); } catch { throw denied; } }
+    },
+    async connected({ connection, context, documentName }) {
+      if (!auth) return;
+      let checking = false;
+      const expiry = setTimeout(() => connection.close(denied), Math.max(0, context.identity.expiresAt - Date.now()));
+      const timer = setInterval(async () => {
+        if (checking) return;
+        checking = true;
+        try { await auth.authorize(context.identity, documentName); }
+        catch { connection.close(denied); }
+        finally { checking = false; }
+      }, 5000);
+      expiry.unref(); timer.unref();
+      const clean = () => { clearTimeout(expiry); clearInterval(timer); authConnections.delete(clean); };
+      authConnections.add(clean); connection.onClose(clean);
     },
     async onStateless({ document, documentName, payload }) {
       try {
@@ -66,10 +101,12 @@ export function createSyncServer(options = {}) {
       } catch { /* Ignore malformed initialization requests. */ }
     },
     async onRequest({ request, response }) {
+      if (handleAuth && await handleAuth(request, response)) throw null;
       const healthy = request.method === 'GET' && request.url === '/healthz';
       const state = healthy && persistence ? await persistence.health() : { healthy: true };
+      if (healthy && auth) { try { await auth.check(); } catch { state.healthy = false; } }
       response.writeHead(healthy ? state.healthy ? 200 : 503 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      response.end(JSON.stringify(healthy ? { status: state.healthy ? 'ok' : 'degraded', service: 'mc-sync', storage: store?.kind ?? 'memory', protocol: 'mc/v1', ...(persistence ? { persistence: state } : {}) } : { error: 'Not found' }));
+      response.end(JSON.stringify(healthy ? { status: state.healthy ? 'ok' : 'degraded', service: 'mc-sync', authentication: authMode, storage: store?.kind ?? 'memory', protocol: 'mc/v1', ...(persistence ? { persistence: state } : {}) } : { error: 'Not found' }));
       throw null;
     },
     ...configuration,
@@ -81,6 +118,7 @@ export function createSyncServer(options = {}) {
     socket.once('close', () => sockets.delete(socket));
   });
   server.persistence = persistence;
+  server.auth = auth;
   const destroy = server.destroy.bind(server);
   let shutdown;
   server.destroy = () => shutdown ??= (async () => {
@@ -88,9 +126,11 @@ export function createSyncServer(options = {}) {
       server.hocuspocus.closeConnections();
       await persistence.flush(server.hocuspocus.documents);
     }
+    for (const clean of authConnections) clean();
     await destroy();
     for (const socket of sockets) socket.destroy();
     await persistence?.close();
+    await auth?.close();
   })().catch(error => { shutdown = undefined; throw error; });
   return server;
 }
@@ -100,10 +140,11 @@ export async function listenSyncServer(server) {
   const onError = error => rejectListen(error);
   server.httpServer.once('error', onError);
   try {
+    await server.auth?.initialize();
     await server.persistence?.store.initialize();
     await Promise.race([server.listen(), failed]);
   } catch (error) {
-    if (!server.httpServer.listening) await server.persistence?.close();
+    if (!server.httpServer.listening) { await server.persistence?.close(); await server.auth?.close(); }
     throw error;
   }
   finally { server.httpServer.off('error', onError); }

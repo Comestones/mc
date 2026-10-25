@@ -18,7 +18,7 @@
 | **前端 Web & UI** | 已实现：React 18.3.1 + TypeScript + Vite + Tailwind CSS + Lucide + Zustand；Shadcn UI 尚未接入 |
 | **编辑器与协同内核** | 已实现：自主轻量块树引擎 (`mc-block-engine`)，实现 BlockNode 1:1 双向绑定与常用块编辑；已接入可选 Yjs 通道与标题/正文编辑器双向绑定；已接入 y-indexeddb 格式的完整 CRDT 离线缓存与关闭恢复 |
 | **桌面客户端壳** | 规划：Tauri 2.0 (Rust) |
-| **后端 API & WebSocket** | 已实现：Node.js + Hocuspocus 本机协同通道；REST API 与账户鉴权待实现 |
+| **后端 API & WebSocket** | 已实现：Node.js + Hocuspocus；可选 JWT/Session 认证 API 与房间授权，前端账户界面待接入 |
 | **数据持久化与存储** | 已实现：本地 IndexedDB、可配置 PostgreSQL Yjs gzip/BYTEA 快照（pg 驱动，真实 PostgreSQL 18.4 验证）；S3 对象存储待实现 |
 | **部署形式** | 当前为 mc_web 与 mc_sync 独立 npm 工程；规划 Docker Compose 一键启动 |
 
@@ -26,7 +26,7 @@
 
 ## 📍 当前进度与最新交付
 
-截至 2026-10-23，已完成 **Day 1 至 Day 21（21 / 35，60.0%）**。DAY19/20 已同步，GitHub main 与本地 b9bc05d 一致的证据已核验。多维数据库支持字段编辑、Row as Page 行详情、看板和画廊；三视图 Tab、看板分组、画廊配置及组合筛选/多字段排序均可在自动保存完成后刷新恢复。
+截至 2026-10-25，已完成 **Day 1 至 Day 22（22 / 35，62.9%）**。本轮先补推 DAY21，核验 GitHub main 与本地 141b916 一致；DAY22 提交后的同步以远程 SHA 核验为准。多维数据库支持字段编辑、Row as Page 行详情、看板和画廊；三视图 Tab、看板分组、画廊配置及组合筛选/多字段排序均可在自动保存完成后刷新恢复。
 
 - **Day 1 基础骨架**：完成递归页面树、页面 CRUD、动态面包屑、明暗主题切换、Emoji 与远程封面更换，以及 Ctrl+K / Cmd+K 全局快捷搜索。
 - **Day 2 基础块编辑闭环**：
@@ -162,13 +162,20 @@ npm run dev
 
 另一个 PowerShell 终端中设置 `$env:VITE_COLLABORATION_URL = 'ws://127.0.0.1:1234'` 后运行 `npm --prefix mc_web run dev`；未设置该变量时为本地编辑模式。也可使用 mc_web/.env.example 创建已忽略的 .env.local。
 
-执行 `npm --prefix mc_web run verify:day15` 运行前端生命周期、真实通道与服务端专项测试（需要先安装两个工程的依赖）。[完整配置与运行说明](mc_sync/README.md)。服务已绑定页面标题、正文与数据库；可配置 PostgreSQL 持久化，未配置时为本机内存通道。账户鉴权按后续日程实施。
+执行 `npm --prefix mc_web run verify:day15` 运行前端生命周期、真实通道与服务端专项测试（需要先安装两个工程的依赖）。[完整配置与运行说明](mc_sync/README.md)。服务已绑定页面标题、正文与数据库；可配置 PostgreSQL 持久化，未配置时为本机内存通道。DAY22 已提供可选后端 required 鉴权模式；当前前端仍使用 local 模式，账户界面待接入。
 
 执行 `npm --prefix mc_web run verify:day16` 运行编辑器组件、真实双客户端并发和服务端初始化验收。两个客户端需使用相同工作区和页面 ID；数据库单元格已在 Day 18 接入，页面树仍待后续。
 
 
 ### 每晚自动推进
 
-当前 Codex 聊天已配置每天本地时间 20:00（Asia/Shanghai）的定时继续任务，状态为 ACTIVE。每轮读取实际进度，最多完成最早未完成的一个 Day：规划 → 实现 → 自测/回归与构建 → 更新验收记录 → commit/push → 核对远程 SHA；下一轮核验 Git 状态与同步证据后，从 Day 22 用户/工作区模型及会话鉴权开始。此配置在本机 Codex 中，不是仓库内 GitHub Actions，克隆仓库不会自动启用。
+当前 Codex 聊天已配置每天本地时间 20:00（Asia/Shanghai）的定时继续任务，状态为 ACTIVE。每轮读取实际进度，最多完成最早未完成的一个 Day：规划 → 实现 → 自测/回归与构建 → 更新验收记录 → commit/push → 核对远程 SHA；下一轮核验 Git 状态与同步证据后，从 Day 23 首次部署管理员初始化向导开始。此配置在本机 Codex 中，不是仓库内 GitHub Actions，克隆仓库不会自动启用。
 
 运行时须保持电脑开机且不睡眠、桌面应用运行、项目目录和网络可用、GitHub 凭据有效。定时任务沿用权限边界：本项目部分文件写入、构建和 Git 操作仍需权限允许；本轮自动继续已完成开发与验证，提交推送以验收记录和远程 SHA 为准。未来若权限不允许，会保留工作并报告阻塞。应在应用中检查首轮结果，按需要为明确的工作区/构建/Git 命令配置允许规则；不需要为了定时任务关闭全部沙箱保护。创建定时配置与每轮实际执行结果应分别核对。详见 [官方定时任务说明](https://learn.chatgpt.com/docs/automations?surface=app)。
+
+
+## Day 22 后端账户与空间基础
+
+Drizzle 定义用户、空间、成员、邀请码、文档元数据及持久会话，提供可重复事务迁移、scrypt 密码哈希、JWT 登录/刷新/注销/me API。required 模式校验空间成员和文档归属，持续检查撤权与到期；默认 local 仅允许本机监听。完整接口、迁移及缓存接入边界见 [服务端说明](mc_sync/README.md#day-22-用户空间模型与认证-api)。
+
+验收：认证集成 9/9、原有后端 13/13、前端 168/168、Day 19 SQL/进程恢复 7/7、Day 15～18/20/21 真实通道 36/36；默认 TypeScript/Vite 构建通过。没有新增 UI，未新增浏览器视觉验收。下一步 DAY23 初始化首个管理员与工作区；本日未预置账户、未启用长期数据库、未替用户修改本地缓存归属。
