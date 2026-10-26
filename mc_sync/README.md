@@ -1,4 +1,4 @@
-# mc_sync · Day 15～22 协同、持久化与会话鉴权
+# mc_sync · Day 15～23 协同、鉴权与部署初始化
 
 要求 Node.js >= 22。使用与前端配套的 Hocuspocus 4.7.1 / Yjs 13.6.33。
 
@@ -187,3 +187,20 @@ JWT 固定 HS256、issuer=mc-sync、audience=mc-api，校验签名、类型、ex
 验证：`npm --prefix mc_sync run verify:day22`（13 项原有后端测试 + 9 项真实 PostgreSQL/HTTP/WebSocket 场景）。覆盖迁移与外键/唯一约束、密码、JWT 伪造/算法/受众/到期、并发刷新/重放、注销/禁用/会话过期、跨空间及 page/database 隔离、被动撤权、撤权写入不落盘、数据库停机拒绝/恢复及请求限流。用临时 PostgreSQL 18.4，不修改用户数据库。DAY22 无 UI 改动，不声称新增浏览器视觉验收。
 
 依据：[Drizzle PostgreSQL 模型](https://orm.drizzle.team/docs/sql-schema-declaration)、[Drizzle SQL 迁移工作流](https://orm.drizzle.team/docs/migrations)、[jose JWT 签名与校验](https://github.com/panva/jose)。
+
+
+## Day 23 首次部署初始化向导
+
+在 DAY22 required 配置基础上，设置服务端 `MC_SETUP_TOKEN` 为独立的至少 32 字节随机秘密；仅通过私有渠道交给部署管理员，不使用 MC_AUTH_SECRET 代替。前端设置 `VITE_API_URL=http://127.0.0.1:1234`（远程应使用 HTTPS），重启 Vite/重新构建，并把前端的精确 Origin 加入 MC_SYNC_ORIGINS。VITE_API_URL 只含服务 origin，不允许路径、查询、凭据或片段。服务端数据库/签名秘密的准备仍是部署前提，向导不自动安装数据库。
+
+GET /api/setup 返回 setupRequired/setupEnabled。数据库故障返回 503，不伪装成“未初始化”；没有 MC_SETUP_TOKEN 时显示配置提示，不能提交初始化。POST /api/setup 接受 JSON email/password/displayName/workspaceName/setupToken，验证密钥、邮箱、名称和密码后，在 advisory lock + 单个事务内创建 is_admin 用户、默认空间、owner 成员及一次性标记；任一步失败全部回滚，冲突返回 409，错误不泄露 SQL/秘密。状态接口不返回用户数量、邮箱或初始化密钥。
+
+`0002.sql` 添加 mc_setup_state，并将已有管理员的 DAY22 部署标记为已初始化，不修改已提交的 0001.sql。初始化检查任意已有管理员（包括禁用者）及永久标记；后续禁用、降级管理员不重新开放认领。管理员恢复应走明确的运维恢复流程，不删除标记来解决登录问题。初始化成功后可移除 MC_SETUP_TOKEN；登录/刷新不依赖该密钥。
+
+界面首次检测期间不挂载匿名编辑器；未初始化显示名称、空间、邮箱、密码确认和部署密钥表单。提交失败保留非秘密字段并清空密码/密钥，提供重新检查以处理并发冲突或成功响应丢失。成功后登录即可通过 /api/me 查看真实空间；凭据仅驻留当前页面内存，刷新/关闭需重新登录，页面打开期间自动轮换令牌。注销调用真实服务撤销 Session。
+
+账户入口目前交付初始化、登录和空间确认，不提供账户空间编辑器；匿名编辑器仍由不设置 VITE_API_URL 的入口提供。两者懒加载隔离，账户入口不加载 WorkspaceStore 或其 IndexedDB。后续编辑器接入必须先实现可信用户缓存命名空间及文档归属，不能直接把匿名 Store 挂到新账户。
+
+验证：`npm --prefix mc_sync run verify:day23`，以及 `npm --prefix mc_web test` / `npm --prefix mc_web run build`。开发者可在交互终端启动 `node mc_sync/test/setup-browser.mjs`，它创建临时 PostgreSQL、监听 1243，仅允许前端 3023 Origin；使用脚本中的明确测试密钥、虚构账户验收，输入 stop 后清理。自动化进程应保持 stdin（PTY），不要把此 fixture 当作生产服务。正式配置不会预置任何测试用户/秘密。
+
+2026-10-26 浏览器验收在 3023/1243 完成：创建 DAY23 验收管理员及 DAY23 验收空间，登录显示空间所有者；刷新只有登录入口，重新登录和注销成功。3024 默认生产预览仍显示原编辑器。证据：[默认空间确认](../mc_web/benchmarks/day23-browser.jpg)。

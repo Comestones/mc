@@ -49,7 +49,7 @@ test('configuration fails closed and password hashes are salted and bounded', as
 
 test('versioned migrations are idempotent; Drizzle relationships and SQL constraints are real', async () => {
   await Promise.all([auth.initialize(), auth.initialize()]);
-  assert.equal((await pool.query('SELECT count(*) FROM mc_auth_migrations')).rows[0].count, '1');
+  assert.equal((await pool.query('SELECT count(*) FROM mc_auth_migrations')).rows[0].count, '2');
   await assert.rejects(auth.db.insert(schema.memberships).values({ workspaceId: 'space-a', userId: bob, role: 'invalid' }));
   await assert.rejects(auth.db.insert(schema.memberships).values({ workspaceId: 'missing', userId: bob, role: 'editor' }));
   await assert.rejects(auth.db.insert(schema.documentMeta).values({ workspaceId: 'space-a', kind: 'page', id: 'page', createdBy: alice }));

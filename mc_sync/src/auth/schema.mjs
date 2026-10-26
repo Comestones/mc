@@ -26,3 +26,7 @@ export const sessions = pgTable('mc_sessions', {
   id: uuid('id').primaryKey(), userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   refreshHash: text('refresh_hash').notNull().unique(), expiresAt: time('expires_at').notNull(), revokedAt: time('revoked_at'), createdAt: time('created_at').notNull().defaultNow(),
 });
+
+export const setupState = pgTable('mc_setup_state', {
+  id: integer('id').primaryKey(), completedAt: time('completed_at').notNull().defaultNow(),
+}, table => [check('mc_setup_state_id_check', sql`${table.id} = 1`)]);

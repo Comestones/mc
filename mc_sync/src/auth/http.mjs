@@ -31,7 +31,7 @@ export function authHttp(auth, origins) {
       response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' }); response.end(); return true;
     }
     const route = `${request.method} ${request.url}`;
-    if (!['POST /api/auth/login','POST /api/auth/refresh','POST /api/auth/logout','GET /api/me'].includes(route)) { reply(response,404,{ error:'Not found' }); return true; }
+    if (!['POST /api/auth/login','POST /api/auth/refresh','POST /api/auth/logout','GET /api/me','GET /api/setup','POST /api/setup'].includes(route)) { reply(response,404,{ error:'Not found' }); return true; }
     try {
       if (active >= 4) throw new AuthError(429);
       const now = Date.now(), ip = request.socket.remoteAddress;
@@ -41,7 +41,9 @@ export function authHttp(auth, origins) {
       attempts.set(ip, entry); active++;
       try {
         let result;
-        if (route === 'POST /api/auth/login') { const data = await body(request); result = await auth.login(data.email, data.password); }
+        if (route === 'GET /api/setup') result = await auth.setupStatus();
+        else if (route === 'POST /api/setup') result = await auth.setup(await body(request));
+        else if (route === 'POST /api/auth/login') { const data = await body(request); result = await auth.login(data.email, data.password); }
         else if (route === 'POST /api/auth/refresh') { const data = await body(request); result = await auth.refresh(data.refreshToken); }
         else {
           const header = request.headers.authorization;
@@ -52,8 +54,8 @@ export function authHttp(auth, origins) {
         reply(response, 200, result);
       } finally { active--; }
     } catch (error) {
-      const status = [400,401,403,413,415,429].includes(error.status) ? error.status : 503;
-      reply(response, status, { error: status === 503 ? 'Authentication service unavailable' : status === 401 ? 'Unauthorized' : status === 403 ? 'Forbidden' : status === 429 ? 'Too many requests' : 'Invalid request' });
+      const status = [400,401,403,409,413,415,429].includes(error.status) ? error.status : 503;
+      reply(response, status, { error: status === 503 ? 'Authentication service unavailable' : status === 401 ? 'Unauthorized' : status === 409 ? 'Setup already completed or account conflicts' : status === 403 ? 'Forbidden' : status === 429 ? 'Too many requests' : 'Invalid request' });
     }
     return true;
   };

@@ -25,7 +25,8 @@ export function readConfig(env = process.env) {
   if (!['local', 'required'].includes(authMode)) throw new Error('MC_AUTH_MODE must be local or required');
   if (authMode === 'local' && (!['127.0.0.1', '::1', 'localhost'].includes(address) || env.MC_AUTH_SECRET)) throw new Error('Local mode requires loopback and no authentication secret');
   if (authMode === 'required' && (!env.MC_SYNC_DATABASE_URL || Buffer.byteLength(env.MC_AUTH_SECRET || '') < 32)) throw new Error('Required authentication needs PostgreSQL and a secret of at least 32 bytes');
-  return { authMode, authSecret: env.MC_AUTH_SECRET, address, port: integer(env.MC_SYNC_PORT, 1234, 1, 65535, 'MC_SYNC_PORT'),
+  if (env.MC_SETUP_TOKEN && (authMode !== 'required' || Buffer.byteLength(env.MC_SETUP_TOKEN) < 32)) throw new Error('MC_SETUP_TOKEN requires authenticated mode and at least 32 bytes');
+  return { setupToken: env.MC_SETUP_TOKEN || undefined, authMode, authSecret: env.MC_AUTH_SECRET, address, port: integer(env.MC_SYNC_PORT, 1234, 1, 65535, 'MC_SYNC_PORT'),
     databaseUrl: env.MC_SYNC_DATABASE_URL?.trim() || undefined,
     debounce: integer(env.MC_SYNC_STORE_DEBOUNCE_MS, 500, 0, 60000, 'MC_SYNC_STORE_DEBOUNCE_MS'),
     maxDebounce: integer(env.MC_SYNC_STORE_MAX_DEBOUNCE_MS, 5000, 1, 300000, 'MC_SYNC_STORE_MAX_DEBOUNCE_MS'),
@@ -45,10 +46,10 @@ export function validRoom(name) {
   });
 }
 export function createSyncServer(options = {}) {
-  const { origins = DEFAULT_ORIGINS, databaseUrl, snapshotStore, persistenceRetryMs, authMode = 'local', authSecret, ...configuration } = options;
+  const { origins = DEFAULT_ORIGINS, databaseUrl, snapshotStore, persistenceRetryMs, authMode = 'local', authSecret, setupToken, ...configuration } = options;
   if (!['local', 'required'].includes(authMode)) throw new Error('Invalid authentication mode');
   if (authMode === 'local' && (authSecret || !['127.0.0.1', '::1', 'localhost'].includes(configuration.address || '127.0.0.1'))) throw new Error('Local mode requires loopback and no authentication secret');
-  const auth = authMode === 'required' ? createAuthService({ databaseUrl, secret: authSecret }) : null;
+  const auth = authMode === 'required' ? createAuthService({ databaseUrl, secret: authSecret, setupToken }) : null;
   const handleAuth = auth ? authHttp(auth, origins) : null;
   const authConnections = new Set();
   const denied = { code: 4401, reason: 'Authorization expired or revoked' };

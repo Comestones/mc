@@ -8,7 +8,7 @@ import { collaborationUrl, createCollaborationSession } from './session';
 import { useCollaborationStore } from './store';
 
 declare global {
-  interface ImportMeta { readonly env: { readonly VITE_COLLABORATION_URL?: string } }
+  interface ImportMeta { readonly env: { readonly VITE_COLLABORATION_URL?: string; readonly VITE_API_URL?: string } }
 }
 export function useCollaborationChannel(endpoint = import.meta.env.VITE_COLLABORATION_URL) {
   const hydrated = useWorkspaceStore(state => state.isHydrated);

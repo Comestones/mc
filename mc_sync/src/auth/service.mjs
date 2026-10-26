@@ -2,15 +2,16 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { and, eq, isNull, gt, sql } from 'drizzle-orm';
 import { SignJWT, jwtVerify } from 'jose';
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import * as schema from './schema.mjs';
-import { verifyPassword } from './password.mjs';
+import { verifyPassword, hashPassword } from './password.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export class AuthError extends Error { constructor(status = 401) { super(status === 403 ? 'Forbidden' : status === 429 ? 'Too many requests' : 'Unauthorized'); this.status = status; } }
-export function createAuthService({ databaseUrl, secret, accessSeconds = 900 }) {
+export function createAuthService({ databaseUrl, secret, setupToken, accessSeconds = 900 }) {
   if (!databaseUrl || typeof secret !== 'string' || Buffer.byteLength(secret) < 32) throw new Error('Required authentication needs PostgreSQL and a secret of at least 32 bytes');
+  if (setupToken !== undefined && (typeof setupToken !== 'string' || Buffer.byteLength(setupToken) < 32)) throw new Error('MC_SETUP_TOKEN must contain at least 32 bytes');
   const key = new TextEncoder().encode(secret);
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 5, connectionTimeoutMillis: 3000, statement_timeout: 5000, query_timeout: 6000 });
   pool.on('error', () => {});
@@ -31,22 +32,57 @@ export function createAuthService({ databaseUrl, secret, accessSeconds = 900 }) 
   return {
     db,
     async initialize() {
-      const migration = (await readFile(new URL('./0001.sql', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+      const migrations = await Promise.all(['0001.sql', '0002.sql'].map(async name => (await readFile(new URL(name, import.meta.url), 'utf8')).replaceAll('\r\n', '\n')));
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         await client.query("SET LOCAL lock_timeout = '5s'");
         await client.query('SELECT pg_advisory_xact_lock(220022)');
         await client.query('CREATE TABLE IF NOT EXISTS mc_auth_migrations (version integer PRIMARY KEY, checksum text NOT NULL)');
-        const existing = await client.query('SELECT checksum FROM mc_auth_migrations WHERE version=1');
-        if (existing.rows.length && existing.rows[0].checksum !== digest(migration)) throw new Error('Authentication migration checksum mismatch');
-        if (!existing.rows.length) {
-          await client.query(migration);
-          await client.query('INSERT INTO mc_auth_migrations VALUES (1,$1)', [digest(migration)]);
+        for (const [index, migration] of migrations.entries()) {
+          const version = index + 1;
+          const existing = await client.query('SELECT checksum FROM mc_auth_migrations WHERE version=$1', [version]);
+          if (existing.rows.length && existing.rows[0].checksum !== digest(migration)) throw new Error('Authentication migration checksum mismatch');
+          if (!existing.rows.length) {
+            await client.query(migration);
+            await client.query('INSERT INTO mc_auth_migrations VALUES ($1,$2)', [version, digest(migration)]);
+          }
         }
         await client.query('COMMIT');
       } catch { await client.query('ROLLBACK').catch(() => {}); throw new Error('Authentication schema initialization failed'); }
       finally { client.release(); }
+    },
+    async setupStatus() {
+      const result = await pool.query('SELECT EXISTS(SELECT 1 FROM mc_setup_state) OR EXISTS(SELECT 1 FROM mc_users WHERE is_admin) AS complete');
+      return { setupRequired: !result.rows[0].complete, setupEnabled: Boolean(setupToken) };
+    },
+    async setup(data) {
+      if (!setupToken || typeof data.setupToken !== 'string' || data.setupToken.length > 1024 || !timingSafeEqual(Buffer.from(digest(setupToken), 'hex'), Buffer.from(digest(data.setupToken), 'hex'))) throw new AuthError(403);
+      const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+      const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : '';
+      const workspaceName = typeof data.workspaceName === 'string' ? data.workspaceName.trim() : '';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || !displayName || displayName.length > 80 || !workspaceName || workspaceName.length > 100 || /[\u0000-\u001f\u007f]/.test(displayName + workspaceName)) throw new AuthError(400);
+      let passwordHash;
+      try { passwordHash = await hashPassword(data.password); } catch { throw new AuthError(400); }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query('SELECT pg_advisory_xact_lock(220023)');
+        const existing = await client.query('SELECT EXISTS(SELECT 1 FROM mc_setup_state) OR EXISTS(SELECT 1 FROM mc_users WHERE is_admin) AS complete');
+        if (existing.rows[0].complete) throw new AuthError(409);
+        const userId = randomUUID(), workspaceId = randomUUID();
+        await client.query('INSERT INTO mc_users (id,email,password_hash,display_name,is_admin) VALUES ($1,$2,$3,$4,true)', [userId,email,passwordHash,displayName]);
+        await client.query('INSERT INTO mc_workspaces (id,name,created_by) VALUES ($1,$2,$3)', [workspaceId,workspaceName,userId]);
+        await client.query("INSERT INTO mc_memberships (workspace_id,user_id,role) VALUES ($1,$2,'owner')", [workspaceId,userId]);
+        await client.query('INSERT INTO mc_setup_state (id) VALUES (1)');
+        await client.query('COMMIT');
+        return { created: true };
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        if (error.code === '23505') throw new AuthError(409);
+        throw error;
+      } finally { client.release(); }
     },
     async check() { await pool.query('SELECT 1 FROM mc_auth_migrations LIMIT 1'); },
     async login(email, password) {
