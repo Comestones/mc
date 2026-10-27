@@ -13,7 +13,8 @@
     "verify:day15": "npm test",
     "verify:day19": "npm test && node --test --test-timeout=60000 test/postgres.integration.mjs && node --test --test-timeout=60000 ../mc_web/scripts/verify-day19.mjs",
     "verify:day22": "npm test && node --test --test-timeout=60000 test/auth.integration.mjs",
-    "verify:day23": "npm test && node --test --test-timeout=60000 test/setup.integration.mjs"
+    "verify:day23": "npm test && node --test --test-timeout=60000 test/setup.integration.mjs",
+    "verify:day24": "npm test && node --test --test-timeout=60000 test/invites.integration.mjs"
   },
   "dependencies": {
     "@hocuspocus/server": "4.7.1",

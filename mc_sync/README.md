@@ -204,3 +204,23 @@ GET /api/setup 返回 setupRequired/setupEnabled。数据库故障返回 503，�
 验证：`npm --prefix mc_sync run verify:day23`，以及 `npm --prefix mc_web test` / `npm --prefix mc_web run build`。开发者可在交互终端启动 `node mc_sync/test/setup-browser.mjs`，它创建临时 PostgreSQL、监听 1243，仅允许前端 3023 Origin；使用脚本中的明确测试密钥、虚构账户验收，输入 stop 后清理。自动化进程应保持 stdin（PTY），不要把此 fixture 当作生产服务。正式配置不会预置任何测试用户/秘密。
 
 2026-10-26 浏览器验收在 3023/1243 完成：创建 DAY23 验收管理员及 DAY23 验收空间，登录显示空间所有者；刷新只有登录入口，重新登录和注销成功。3024 默认生产预览仍显示原编辑器。证据：[默认空间确认](../mc_web/benchmarks/day23-browser.jpg)。
+
+
+## Day 24 邀请 API 与账户入口
+
+复用 DAY22/23 required 配置及 InviteToken 表，无新迁移或依赖。以下均为 JSON POST，并沿用 Origin、no-store、4096 字节请求上限及限流：
+
+| 路径 | 身份 / 请求 | 结果 |
+| --- | --- | --- |
+| /api/invites | owner Bearer；workspaceId, expiresInHours（整数 1–720）, maxUses（整数 1–100） | token、id、expires_at、max_uses |
+| /api/invites/list | owner Bearer；workspaceId | invites，按到期降序最多 100 条，无令牌或摘要 |
+| /api/invites/revoke | owner Bearer；workspaceId, id | 幂等撤销 |
+| /api/invites/preview | token | workspaceName，不消耗次数 |
+| /api/invites/register | token, email, password, displayName | 新用户及 editor 成员，joined:true；随后登录 |
+| /api/invites/join | Bearer；token | 已有账户加入，joined:true |
+
+令牌为 32 随机字节，数据库仅保存 SHA-256。链接使用 #invite= 片段，入口读取后移除地址片段，只在内存保留并通过 POST 发送，不写 localStorage/sessionStorage。原文仅生成时返回一次，请私下分享；关闭后不可找回，可撤销重建。所有者依据目标空间成员权限检查，系统管理员身份不绕过空间权限。过期、撤销、次数耗尽、创建者禁用或不再是 owner 均拒绝（410）。
+
+注册在同一事务/邀请行锁下校验、消费次数、创建用户与 editor 成员；唯一邮箱冲突返回 409，全部回滚，请使用已有账户登录加入。已有成员使用仍有效邀请不重复消费也不降权。数据库时钟再次检查期限，防止等待锁后使用过期邀请；失败不遗留用户或消耗次数。账户编辑器与旧匿名缓存依旧隔离。
+
+运行 npm --prefix mc_sync run verify:day24（后端 13 + 邀请集成 7），以及 mc_web 的 npm test / npm run build。沿用 setup-browser.mjs 临时数据库 fixture 可进行邀请 UI 验收；2026-10-27 实测新成员注册登录、1/2 计数及撤销拒绝，截图见 ../mc_web/benchmarks/day24-browser.jpg。

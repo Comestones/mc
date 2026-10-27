@@ -1,3 +1,5 @@
+import { call, message } from './api';
+import { InvitePanel, RedeemInvite } from './Invites';
 import React, { useEffect, useRef, useState } from 'react';
 
 type Setup = { setupRequired: boolean; setupEnabled: boolean };
@@ -8,30 +10,12 @@ export function apiOrigin(value: string): string {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('账户服务地址配置无效');
   return url.origin;
 }
-class ApiError extends Error { constructor(public status: number) { super('请求未完成'); } }
-async function call<T>(base: string, path: string, data?: unknown, token?: string): Promise<T> {
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch(base + path, { method: data === undefined ? 'GET' : 'POST', credentials: 'omit', signal: controller.signal,
-      headers: { ...(data !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      ...(data !== undefined ? { body: JSON.stringify(data) } : {}) });
-    if (!response.ok) throw new ApiError(response.status);
-    return await response.json();
-  } finally { clearTimeout(timer); }
-}
-function message(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401) return '邮箱或密码不正确，或会话已过期。';
-    if (error.status === 403) return '初始化密钥不正确，或当前来源未获允许。';
-    if (error.status === 409) return '初始化已完成或邮箱已存在，请重新检查部署状态。';
-    if (error.status === 400) return '请检查邮箱、名称和密码格式。';
-    if (error.status === 429) return '请求过于频繁，请稍后再试。';
-  }
-  return '暂时无法连接账户服务，请稍后重试。';
-}
 export default function SetupApp({ url }: { url: string }) {
   let base = ''; let configError = '';
   try { base = apiOrigin(url); } catch { configError = '账户服务地址配置无效，请检查部署配置。'; }
+  const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') || '');
+  const [inviteOpen, setInviteOpen] = useState(() => new URLSearchParams(window.location.hash.slice(1)).has('invite'));
+  useEffect(() => { if (new URLSearchParams(window.location.hash.slice(1)).has('invite')) window.history.replaceState(null, '', window.location.pathname + window.location.search); }, []);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [tokens, setTokens] = useState<Tokens | null>(null);
@@ -74,7 +58,7 @@ export default function SetupApp({ url }: { url: string }) {
         const next = await call<Tokens>(base, '/api/auth/login', { email, password });
         const me = await call<Account>(base, '/api/me', undefined, next.accessToken);
         if (!mounted.current || current !== operation.current) return;
-        setTokens(next); setAccount(me);
+        setTokens(next); setAccount(me); setInviteOpen(Boolean(inviteToken));
       }
     } catch (cause) {
       if (mounted.current && current === operation.current) setError(message(cause));
@@ -102,10 +86,11 @@ export default function SetupApp({ url }: { url: string }) {
       {notice && <p role="status" className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">{notice}</p>}
       {!configError && !setup && !error && <p role="status" className="mt-4 text-sm text-slate-600">正在连接账户服务…</p>}
       {!configError && !account && error && <button type="button" disabled={busy} onClick={() => setRevision(value => value + 1)} className="mt-4 text-sm text-blue-700 underline">重新检查部署状态</button>}
-      {account ? <div className="mt-5 space-y-4">
+      {setup && !setup.setupRequired && inviteOpen ? <RedeemInvite base={base} token={inviteToken} onToken={setInviteToken} accessToken={tokens?.accessToken} onClose={() => setInviteOpen(false)} onRegistered={registeredEmail => { setEmail(registeredEmail); setInviteOpen(false); setInviteToken(''); setNotice('注册并加入成功，请登录。'); }} onJoined={async () => { if (tokens) setAccount(await call<Account>(base, '/api/me', undefined, tokens.accessToken)); setInviteOpen(false); setInviteToken(''); setNotice('已加入工作区。'); }} /> : account ? <div className="mt-5 space-y-4">
         <p>你好，{account.user.displayName}</p><p className="text-sm text-slate-500">{account.user.email}</p>
-        <ul className="space-y-3" aria-label="你的工作区">{account.workspaces.map(workspace => <li key={workspace.id} className="rounded-xl border border-slate-200 p-4"><strong>{workspace.name}</strong><p className="mt-1 text-sm text-slate-500">{workspace.role === 'owner' ? '空间所有者' : '空间成员'}</p></li>)}</ul>
+        <ul className="space-y-3" aria-label="你的工作区">{account.workspaces.map(workspace => <li key={workspace.id} className="rounded-xl border border-slate-200 p-4"><strong>{workspace.name}</strong><p className="mt-1 text-sm text-slate-500">{workspace.role === 'owner' ? '空间所有者' : '空间成员'}</p>{workspace.role === 'owner' && tokens && <InvitePanel base={base} accessToken={tokens.accessToken} workspaceId={workspace.id} />}</li>)}</ul>
         <p className="text-sm text-slate-600">账户和空间已创建。账户工作区的文档编辑入口将在后续阶段接入。</p>
+        <button type="button" onClick={() => setInviteOpen(true)} className="text-sm text-blue-700 underline">使用邀请码加入其他空间</button>
         <button type="button" disabled={busy} onClick={logout} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-50">{busy ? '正在退出…' : '退出登录'}</button>
       </div> : setup && !configError && <>
         <p className="mt-3 text-sm leading-6 text-slate-600">{setup.setupRequired ? '创建首个管理员账户和默认工作区，开始配置你的 mc。现有本地文档不会自动导入。' : '使用你的账户查看已创建的工作区。关闭或刷新页面后需要重新登录。'}</p>
@@ -121,6 +106,7 @@ export default function SetupApp({ url }: { url: string }) {
             <button className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" type="submit">{busy ? '正在提交…' : setup.setupRequired ? '创建管理员与工作区' : '登录'}</button>
           </fieldset>
         </form>}
+        {!setup.setupRequired && <button type="button" onClick={() => setInviteOpen(true)} className="mt-4 text-sm text-blue-700 underline">使用邀请码注册或加入</button>}
       </>}
     </section>
   </main>;

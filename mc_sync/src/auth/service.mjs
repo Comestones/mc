@@ -1,3 +1,4 @@
+import { createInvites } from './invites.mjs';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { and, eq, isNull, gt, sql } from 'drizzle-orm';
@@ -31,6 +32,7 @@ export function createAuthService({ databaseUrl, secret, setupToken, accessSecon
   });
   return {
     db,
+    ...createInvites(pool, liveSession, AuthError),
     async initialize() {
       const migrations = await Promise.all(['0001.sql', '0002.sql'].map(async name => (await readFile(new URL(name, import.meta.url), 'utf8')).replaceAll('\r\n', '\n')));
       const client = await pool.connect();

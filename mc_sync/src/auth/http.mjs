@@ -31,7 +31,7 @@ export function authHttp(auth, origins) {
       response.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Cache-Control': 'no-store' }); response.end(); return true;
     }
     const route = `${request.method} ${request.url}`;
-    if (!['POST /api/auth/login','POST /api/auth/refresh','POST /api/auth/logout','GET /api/me','GET /api/setup','POST /api/setup'].includes(route)) { reply(response,404,{ error:'Not found' }); return true; }
+    if (!['POST /api/auth/login','POST /api/auth/refresh','POST /api/auth/logout','GET /api/me','GET /api/setup','POST /api/setup','POST /api/invites','POST /api/invites/list','POST /api/invites/revoke','POST /api/invites/preview','POST /api/invites/register','POST /api/invites/join'].includes(route)) { reply(response,404,{ error:'Not found' }); return true; }
     try {
       if (active >= 4) throw new AuthError(429);
       const now = Date.now(), ip = request.socket.remoteAddress;
@@ -45,17 +45,20 @@ export function authHttp(auth, origins) {
         else if (route === 'POST /api/setup') result = await auth.setup(await body(request));
         else if (route === 'POST /api/auth/login') { const data = await body(request); result = await auth.login(data.email, data.password); }
         else if (route === 'POST /api/auth/refresh') { const data = await body(request); result = await auth.refresh(data.refreshToken); }
+        else if (route === 'POST /api/invites/preview') result = await auth.previewInvite(await body(request));
+        else if (route === 'POST /api/invites/register') result = await auth.registerInvite(await body(request));
         else {
           const header = request.headers.authorization;
           if (typeof header !== 'string' || !/^Bearer [^ ]+$/.test(header)) throw new AuthError();
           const identity = await auth.authenticate(header.slice(7));
-          result = route === 'GET /api/me' ? await auth.me(identity) : (await auth.logout(identity), { ok: true });
+          const inviteActions = { 'POST /api/invites': auth.createInvite, 'POST /api/invites/list': auth.listInvites, 'POST /api/invites/revoke': auth.revokeInvite, 'POST /api/invites/join': auth.joinInvite };
+          result = inviteActions[route] ? await inviteActions[route](identity, await body(request)) : route === 'GET /api/me' ? await auth.me(identity) : (await auth.logout(identity), { ok: true });
         }
         reply(response, 200, result);
       } finally { active--; }
     } catch (error) {
-      const status = [400,401,403,409,413,415,429].includes(error.status) ? error.status : 503;
-      reply(response, status, { error: status === 503 ? 'Authentication service unavailable' : status === 401 ? 'Unauthorized' : status === 409 ? 'Setup already completed or account conflicts' : status === 403 ? 'Forbidden' : status === 429 ? 'Too many requests' : 'Invalid request' });
+      const status = [400,401,403,409,410,413,415,429].includes(error.status) ? error.status : 503;
+      reply(response, status, { error: status === 503 ? 'Authentication service unavailable' : status === 401 ? 'Unauthorized' : status === 410 ? 'Invitation unavailable' : status === 409 ? 'Setup already completed or account conflicts' : status === 403 ? 'Forbidden' : status === 429 ? 'Too many requests' : 'Invalid request' });
     }
     return true;
   };
